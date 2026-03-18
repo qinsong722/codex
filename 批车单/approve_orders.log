@@ -1,0 +1,535 @@
+[2026-03-14 19:55:08] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-14 19:55:22] 登录成功。
+[2026-03-14 19:55:39] 浏览器将保持停留在当前页面，脚本退出时不会自动关闭窗口。
+[2026-03-14 19:55:39] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=145.0.3800.97); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+Symbols not available. Dumping unresolved backtrace:
+	0x7ff704ae7c25
+	0x7ff704ae7c84
+	0x7ff704e2ad0a
+	0x7ff70482c5a2
+	0x7ff704847e32
+	0x7ff7048a8f3b
+	0x7ff7048beabf
+	0x7ff704879a1c
+	0x7ff704878c76
+	0x7ff704879843
+	0x7ff704940564
+	0x7ff70493ca03
+	0x7ff70494d0c3
+	0x7ff704b02308
+	0x7ff704b0abe6
+	0x7ff704aef264
+	0x7ff704aef3a9
+	0x7ff704add1e2
+	0x7ffd32fbe8d7
+	0x7ffd3450c48c
+
+[2026-03-14 19:55:39] 检测到浏览器会话断开，5 秒后自动重启流程。
+[2026-03-14 19:55:52] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-14 20:00:53] 浏览器将保持停留在当前页面，脚本退出时不会自动关闭窗口。
+[2026-03-14 20:00:53] WebDriverException: Message: 等待登录成功超时。
+
+[2026-03-14 20:03:08] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-14 20:03:22] 登录成功。
+[2026-03-14 20:03:52] 已进入申请单审批页面。
+[2026-03-14 20:04:04] 当前没有待审批申请单，停留在当前页面，5 分钟后自动刷新。
+[2026-03-14 20:04:11] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:04:43] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:05:14] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:05:47] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:06:18] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:06:50] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:07:22] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:07:54] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:08:25] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:09:00] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:09:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:10:03] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:10:34] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:11:05] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:11:37] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:12:10] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:12:41] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:13:13] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:13:45] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:14:17] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:14:48] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:15:20] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:15:51] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:16:24] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:16:56] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:17:27] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:17:59] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:18:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:19:02] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:19:35] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:20:07] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:20:40] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:21:12] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:21:43] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:22:15] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:22:48] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:23:19] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:23:51] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:24:22] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:24:54] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:25:27] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:25:58] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:26:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:27:05] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:27:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:28:08] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:28:40] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:29:12] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:29:13] 浏览器将保持停留在当前页面，脚本退出时不会自动关闭窗口。
+[2026-03-14 20:29:13] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: Unable to receive message from renderer
+  (Session info: MicrosoftEdge=145.0.3800.97); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+Symbols not available. Dumping unresolved backtrace:
+	0x7ff704ae7c25
+	0x7ff704ae7c84
+	0x7ff704e2ad0a
+	0x7ff70482d947
+	0x7ff70482d6e5
+	0x7ff70482c775
+	0x7ff7048474ab
+	0x7ff7048bf3b1
+	0x7ff704879a1c
+	0x7ff704878c76
+	0x7ff704879843
+	0x7ff704940564
+	0x7ff70493ca03
+	0x7ff70494d0c3
+	0x7ff704b02308
+	0x7ff704b0abe6
+	0x7ff704aef264
+	0x7ff704aef3a9
+	0x7ff704add1e2
+	0x7ffd32fbe8d7
+	0x7ffd3450c48c
+
+[2026-03-14 20:29:13] 检测到浏览器会话断开，5 秒后自动重启流程。
+[2026-03-14 20:30:35] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-14 20:35:35] 浏览器将保持停留在当前页面，脚本退出时不会自动关闭窗口。
+[2026-03-14 20:35:35] WebDriverException: Message: 等待登录成功超时。
+
+[2026-03-14 20:46:47] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-14 20:47:00] 登录成功。
+[2026-03-14 20:47:30] 已进入申请单审批页面。
+[2026-03-14 20:47:43] 当前没有待审批申请单，停留在当前页面，5 分钟后自动刷新。
+[2026-03-14 20:47:49] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:48:23] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:48:57] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:49:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:50:04] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:50:37] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:51:10] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:51:45] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:52:19] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:52:53] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:53:27] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:54:00] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:54:33] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:55:06] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:55:39] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:56:12] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:56:45] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:57:18] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:57:51] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:58:25] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:58:59] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 20:59:32] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:00:07] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:00:41] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:01:14] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:01:47] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:02:20] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:02:55] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:03:28] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:04:01] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:04:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:05:11] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:05:44] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:06:19] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:06:52] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:07:28] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:08:01] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:08:35] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:09:09] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:09:44] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:10:18] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:10:52] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:11:26] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:12:01] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:12:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:13:10] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:13:43] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:14:18] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:14:51] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:15:24] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:15:58] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:16:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:17:04] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:17:37] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:18:11] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:18:46] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:19:20] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:19:53] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:20:26] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:21:00] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:21:33] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:22:24] 已执行一次保活刷新。
+[2026-03-14 21:22:30] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:23:03] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:23:39] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:24:12] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:24:45] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:25:18] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:25:52] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:26:26] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:26:59] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:27:34] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:28:08] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:28:41] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:29:14] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:29:47] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:30:21] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:30:54] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:31:27] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:32:01] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:32:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:33:09] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:33:42] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:34:16] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:34:50] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:35:23] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:35:56] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:36:30] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:37:03] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:37:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:38:09] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:38:43] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:39:19] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:39:52] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:40:25] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:40:58] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:41:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:42:05] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:42:38] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:43:11] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:43:47] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:44:21] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:44:53] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:45:28] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:46:01] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:46:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:47:09] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:47:42] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:48:16] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:48:49] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:49:25] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:49:59] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:50:33] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:51:08] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:51:41] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:52:15] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:52:48] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:53:22] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:53:55] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:54:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:55:04] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:55:39] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:56:10] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:56:59] 已执行一次保活刷新。
+[2026-03-14 21:57:06] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:57:37] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:58:09] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:58:40] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:59:11] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 21:59:46] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:00:18] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:00:49] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:01:21] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:01:54] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:02:27] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:02:58] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:03:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:04:03] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:04:36] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:05:08] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:05:40] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:06:13] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:06:45] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:07:17] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:07:49] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:08:21] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:08:53] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:09:25] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:09:58] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:10:31] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:11:05] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:11:37] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:12:09] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:12:41] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:13:13] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:13:46] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:14:19] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:14:53] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:15:26] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:15:59] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-14 22:16:21] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=145.0.3800.97); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+Symbols not available. Dumping unresolved backtrace:
+	0x7ff704ae7c25
+	0x7ff704ae7c84
+	0x7ff704e2ad0a
+	0x7ff70482c5a2
+	0x7ff704847e32
+	0x7ff7048a8f3b
+	0x7ff7048beabf
+	0x7ff704879a1c
+	0x7ff704878c76
+	0x7ff704879843
+	0x7ff704940564
+	0x7ff70493ca03
+	0x7ff70494d0c3
+	0x7ff704b02308
+	0x7ff704b0abe6
+	0x7ff704aef264
+	0x7ff704aef3a9
+	0x7ff704add1e2
+	0x7ffd32fbe8d7
+	0x7ffd3450c48c
+
+[2026-03-14 22:16:21] 检测到浏览器会话断开，本次停止运行，由程序托管的浏览器窗口会随之结束。
+[2026-03-15 22:12:18] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-15 22:12:39] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 22:12:56] 登录成功。
+[2026-03-15 22:13:08] WebDriverException: Message: target frame detached
+  (failed to check if window was closed: disconnected: Unable to receive message from renderer)
+  (Session info: MicrosoftEdge=146.0.3856.59)
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!(No symbol) [0x7ff6e9d7ac7e]
+	msedgedriver!(No symbol) [0x7ff6e9d6d618]
+	msedgedriver!(No symbol) [0x7ff6e9d6c715]
+	msedgedriver!(No symbol) [0x7ff6e9d87e33]
+	msedgedriver!(No symbol) [0x7ff6e9de8e21]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-15 22:13:08] 检测到浏览器会话断开，本次停止运行。
+[2026-03-15 23:29:36] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-15 23:29:48] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-15 23:29:59] 未预期异常: [Errno 22] Invalid argument
+[2026-03-15 23:30:10] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 23:30:39] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 23:32:48] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-15 23:33:09] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 23:33:34] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 23:34:01] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 23:34:27] 登录页加载异常，正在自动刷新重试。
+[2026-03-15 23:34:52] 登录成功。
+[2026-03-15 23:35:22] 已进入申请单审批页面。
+[2026-03-15 23:36:10] 已审批第 1 张申请单。
+[2026-03-15 23:36:29] 本轮审批完成，已处理 1 张申请单，累计处理 1 张。
+[2026-03-15 23:36:29] 当前没有待审批申请单，停留在当前页面，5 分钟后自动刷新。
+[2026-03-15 23:36:50] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=146.0.3856.59); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!GetHandleVerifier [0x7ff6ea3be84c+37c6dc]
+	msedgedriver!(No symbol) [0x7ff6e9d6c542]
+	msedgedriver!(No symbol) [0x7ff6e9d87e33]
+	msedgedriver!(No symbol) [0x7ff6e9de8e21]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-15 23:36:50] 检测到浏览器会话断开，本次停止运行。
+[2026-03-15 23:54:07] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-15 23:55:43] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-15 23:56:12] 登录成功。
+[2026-03-15 23:56:42] 已进入申请单审批页面。
+[2026-03-15 23:57:29] 已审批第 1 张申请单。
+[2026-03-15 23:57:44] 本轮审批完成，已处理 1 张申请单，累计处理 1 张。
+[2026-03-15 23:57:44] 当前没有待审批申请单，停留在当前页面，5 分钟后自动刷新。
+[2026-03-15 23:57:50] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-15 23:58:10] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=146.0.3856.59); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!GetHandleVerifier [0x7ff6ea3be84c+37c6dc]
+	msedgedriver!(No symbol) [0x7ff6e9d6c542]
+	msedgedriver!(No symbol) [0x7ff6e9d87e33]
+	msedgedriver!(No symbol) [0x7ff6e9de8e21]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-15 23:58:10] 检测到浏览器会话断开，本次停止运行。
+[2026-03-16 00:02:34] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=146.0.3856.59); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!GetHandleVerifier [0x7ff6ea3be84c+37c6dc]
+	msedgedriver!(No symbol) [0x7ff6e9d6c542]
+	msedgedriver!(No symbol) [0x7ff6e9d87e33]
+	msedgedriver!(No symbol) [0x7ff6e9de8e21]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-16 00:02:34] 检测到浏览器会话断开，本次停止运行。
+[2026-03-16 00:03:43] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=146.0.3856.59); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!GetHandleVerifier [0x7ff6ea3be84c+37c6dc]
+	msedgedriver!(No symbol) [0x7ff6e9d6c542]
+	msedgedriver!(No symbol) [0x7ff6e9d87e33]
+	msedgedriver!(No symbol) [0x7ff6e9de8e21]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-16 00:03:43] 检测到浏览器会话断开，本次停止运行。
+[2026-03-16 00:04:26] WebDriverException: Message: 
+
+[2026-03-16 00:05:20] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-16 00:05:49] 登录成功。
+[2026-03-16 00:06:19] 已进入申请单审批页面。
+[2026-03-16 00:06:31] WebDriverException: Message: invalid session id: session deleted as the browser has closed the connection
+from disconnected: not connected to DevTools
+  (Session info: MicrosoftEdge=146.0.3856.59); For documentation on this error, please visit: https://www.selenium.dev/documentation/webdriver/troubleshooting/errors#invalidsessionidexception
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!GetHandleVerifier [0x7ff6ea3be84c+37c6dc]
+	msedgedriver!(No symbol) [0x7ff6e9d6c542]
+	msedgedriver!(No symbol) [0x7ff6e9d87e33]
+	msedgedriver!(No symbol) [0x7ff6e9de8e21]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-16 00:06:31] 检测到浏览器会话断开，本次停止运行。
+[2026-03-16 00:08:42] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-16 00:11:21] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-16 00:12:44] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-16 00:13:49] 登录页加载异常，正在自动刷新重试。
+[2026-03-16 00:15:55] 验证码已发送，请直接在当前输入框内输入验证码。
+[2026-03-16 00:16:18] 登录成功。
+[2026-03-16 00:16:48] 已进入申请单审批页面。
+[2026-03-16 00:17:00] 当前没有待审批申请单，停留在当前页面，5 分钟后自动刷新。
+[2026-03-16 00:17:07] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-16 00:17:40] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-16 00:18:11] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-16 00:18:43] 检测到审批页面加载转圈，立即刷新并回到审批界面。
+[2026-03-16 00:18:59] WebDriverException: Message: no such window: target window already closed
+from unknown error: web view not found
+  (Session info: MicrosoftEdge=146.0.3856.59)
+Stacktrace:
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fb85+da15]
+	msedgedriver!GetHandleVerifier [0x7ff6ea04fbe4+da74]
+	msedgedriver!GetHandleVerifier [0x7ff6ea3be84c+37c6dc]
+	msedgedriver!(No symbol) [0x7ff6e9d5da3d]
+	msedgedriver!(No symbol) [0x7ff6e9de8c7c]
+	msedgedriver!(No symbol) [0x7ff6e9dfe99f]
+	msedgedriver!(No symbol) [0x7ff6e9db9aac]
+	msedgedriver!(No symbol) [0x7ff6e9db8d06]
+	msedgedriver!(No symbol) [0x7ff6e9db98d3]
+	msedgedriver!(No symbol) [0x7ff6e9e86859]
+	msedgedriver!(No symbol) [0x7ff6e9e83033]
+	msedgedriver!(No symbol) [0x7ff6e9e92a04]
+	msedgedriver!GetHandleVerifier [0x7ff6ea06aa08+28898]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0734f6+31386]
+	msedgedriver!GetHandleVerifier [0x7ff6ea0572c4+15154]
+	msedgedriver!GetHandleVerifier [0x7ff6ea057409+15299]
+	msedgedriver!GetHandleVerifier [0x7ff6ea044602+2492]
+	KERNEL32!BaseThreadInitThunk [0x7ffd32fbe8d7+17]
+	ntdll!RtlUserThreadStart [0x7ffd3450c48c+2c]
+
+[2026-03-16 00:18:59] 检测到浏览器会话断开，本次停止运行。

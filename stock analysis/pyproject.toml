@@ -1,0 +1,23 @@
+[project]
+name = "stock-analysis-pipeline"
+version = "0.1.0"
+description = "Analyze a local China Merchants Securities watchlist and notify via Feishu."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "curl_cffi>=0.14.0",
+  "openai>=1.109.0",
+  "pywinauto>=0.6.8",
+  "reportlab>=4.4.0",
+  "requests>=2.32.0",
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,5 @@
+curl_cffi>=0.14.0
+openai>=1.109.0
+pywinauto>=0.6.8
+reportlab>=4.4.0
+requests>=2.32.0
