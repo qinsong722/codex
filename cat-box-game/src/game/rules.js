@@ -1,42 +1,28 @@
 import {
-  BOX_TYPES,
-  LEVEL_UP_REQUIREMENTS,
-  RISKY_LEVEL_OFFSETS,
-  SAFE_LEVEL_OFFSETS,
+  MAX_AMMO,
+  TANK_SHELL_LIMIT,
 } from "./constants";
 
-export function resolveRunnerEncounter({ catLevel, mouseLevel }) {
-  if (catLevel >= mouseLevel) {
-    return {
-      outcome: "eat",
-      healthLoss: 0,
-      growthGain: 1,
-    };
-  }
-
-  return {
-    outcome: "bounce",
-    healthLoss: 1,
-    growthGain: 0,
-  };
+export function canFireWeapon({ lastFireAt, now, weapon }) {
+  return now - lastFireAt >= weapon.fireCooldownMs;
 }
 
-export function resolveFallDamage() {
-  return {
-    outcome: "fall",
-    healthLoss: 1,
-    growthGain: 0,
-  };
+export function getAmmoAfterPickup({ ammo, amount }) {
+  return Math.min(MAX_AMMO, ammo + amount);
 }
 
-export function getGrowthThresholdForLevel(level) {
-  return LEVEL_UP_REQUIREMENTS[level] ?? Math.max(2, level + 1);
+export function getShellsAfterPickup({ shells, amount }) {
+  return Math.min(TANK_SHELL_LIMIT, shells + amount);
 }
 
-export function rollMouseLevel({ boxType, catLevel, random = Math.random }) {
-  const offsets = boxType === BOX_TYPES.RISKY ? RISKY_LEVEL_OFFSETS : SAFE_LEVEL_OFFSETS;
-  const index = Math.min(offsets.length - 1, Math.floor(random() * offsets.length));
-  const level = catLevel + offsets[index];
+export function applyEnemyContact({ health, damage = 1 }) {
+  return Math.max(0, health - damage);
+}
 
-  return Math.max(1, level);
+export function getDamageForHit({ hitType }) {
+  return hitType === "tankCannon" ? 3 : 1;
+}
+
+export function isWaveComplete({ enemies }) {
+  return enemies.length === 0;
 }

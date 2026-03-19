@@ -1,3 +1,88 @@
+const STREET_STAGE_WIDTH = 1280;
+const STREET_STAGE_HEIGHT = 720;
+
+const STREET_DECORATION_ANCHORS = [
+  { x: 120, y: 96, kind: "streetlight" },
+  { x: 310, y: 132, kind: "barrier" },
+  { x: 980, y: 118, kind: "streetlight" },
+  { x: 1160, y: 168, kind: "barrier" },
+];
+
+const WEAPON_PICKUP_PLACEMENTS = [
+  { x: 180, y: 520, weapon: "shotgun" },
+  { x: 1080, y: 500, weapon: "rifle" },
+];
+
+const AMMO_PICKUP_PLACEMENTS = [
+  { x: 360, y: 560, amount: 24 },
+  { x: 640, y: 600, amount: 24 },
+  { x: 900, y: 556, amount: 24 },
+];
+
+const TANK_PLACEMENT = { x: 640, y: 420, facing: "south" };
+
+const TANK_SHELL_PICKUP_PLACEMENTS = [
+  { x: 240, y: 220, amount: 2 },
+  { x: 1040, y: 240, amount: 2 },
+];
+
+const ENEMY_SPAWN_LANES = [
+  { x: 180, y: 88, width: 160, direction: "down" },
+  { x: 560, y: 72, width: 160, direction: "down" },
+  { x: 940, y: 96, width: 160, direction: "down" },
+];
+
+function clonePlacements(placements) {
+  return placements.map((placement) => ({ ...placement }));
+}
+
+export function createStageBounds() {
+  return {
+    left: 0,
+    top: 0,
+    width: STREET_STAGE_WIDTH,
+    height: STREET_STAGE_HEIGHT,
+    right: STREET_STAGE_WIDTH,
+    bottom: STREET_STAGE_HEIGHT,
+  };
+}
+
+export function createStreetDecorationAnchors() {
+  return clonePlacements(STREET_DECORATION_ANCHORS);
+}
+
+export function createWeaponPickupPlacements() {
+  return clonePlacements(WEAPON_PICKUP_PLACEMENTS);
+}
+
+export function createAmmoPickupPlacements() {
+  return clonePlacements(AMMO_PICKUP_PLACEMENTS);
+}
+
+export function createTankPlacement() {
+  return { ...TANK_PLACEMENT };
+}
+
+export function createTankShellPickupPlacements() {
+  return clonePlacements(TANK_SHELL_PICKUP_PLACEMENTS);
+}
+
+export function createEnemySpawnLanes() {
+  return clonePlacements(ENEMY_SPAWN_LANES);
+}
+
+export function createStreetWorld() {
+  return {
+    stageBounds: createStageBounds(),
+    streetDecorationAnchors: createStreetDecorationAnchors(),
+    weaponPickupPlacements: createWeaponPickupPlacements(),
+    ammoPickupPlacements: createAmmoPickupPlacements(),
+    tankPlacement: createTankPlacement(),
+    tankShellPickupPlacements: createTankShellPickupPlacements(),
+    enemySpawnLanes: createEnemySpawnLanes(),
+  };
+}
+
 const DEFAULT_PLATFORM_COUNT = 5;
 const PLATFORM_WIDTH = 120;
 const PLATFORM_HEIGHT = 16;

@@ -7,6 +7,19 @@ export const TRANSLATIONS = {
   [LANGUAGES.ZH]: {
     "box.safe": "\u5b89\u5168\u4e00\u70b9",
     "box.risky": "\u5192\u9669\u4e00\u70b9",
+    "hud.health": "\u8840\u91cf",
+    "hud.ammo": "\u5b50\u5f39",
+    "hud.wave": "\u6ce2\u6b21",
+    "hud.kills": "\u51fb\u6740",
+    "hud.tank": "\u5766\u514b",
+    "weapon.pistol": "\u624b\u67aa",
+    "weapon.rifle": "\u6b65\u67aa",
+    "weapon.shotgun": "\u9730\u5f39\u67aa",
+    "status.health": "\u8840\u91cf",
+    "status.ammo": "\u5b50\u5f39",
+    "status.wave": "\u6ce2\u6b21",
+    "status.kills": "\u51fb\u6740",
+    "status.tank": "\u5766\u514b",
     "runner.level": "\u7b49\u7ea7",
     "runner.health": "\u751f\u547d",
     "runner.growth": "\u6210\u957f",
@@ -35,6 +48,19 @@ export const TRANSLATIONS = {
   [LANGUAGES.EN]: {
     "box.safe": "Safer",
     "box.risky": "Riskier",
+    "hud.health": "Health",
+    "hud.ammo": "Ammo",
+    "hud.wave": "Wave",
+    "hud.kills": "Kills",
+    "hud.tank": "Tank",
+    "weapon.pistol": "Pistol",
+    "weapon.rifle": "Rifle",
+    "weapon.shotgun": "Shotgun",
+    "status.health": "Health",
+    "status.ammo": "Ammo",
+    "status.wave": "Wave",
+    "status.kills": "Kills",
+    "status.tank": "Tank",
     "runner.level": "Level",
     "runner.health": "Health",
     "runner.growth": "Growth",
@@ -68,6 +94,18 @@ export function getText(key, language = LANGUAGES.ZH) {
 
 export function toggleLanguage(language) {
   return language === LANGUAGES.ZH ? LANGUAGES.EN : LANGUAGES.ZH;
+}
+
+export function getHudLabel(label, language = LANGUAGES.ZH) {
+  return getText(`hud.${label}`, language);
+}
+
+export function getStatusLabel(status, language = LANGUAGES.ZH) {
+  return getText(`status.${status}`, language);
+}
+
+export function getWeaponLabel(weapon, language = LANGUAGES.ZH) {
+  return getText(`weapon.${weapon}`, language);
 }
 
 export function getBoxLabel(boxType, language = LANGUAGES.ZH) {

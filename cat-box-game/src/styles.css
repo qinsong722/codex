@@ -1,14 +1,21 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Trebuchet MS", "Segoe UI", sans-serif;
   background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.8), transparent 30%),
-    linear-gradient(180deg, #fff7ed 0%, #ffe4e6 55%, #fde68a 100%);
-  color: #4c1d1d;
+    radial-gradient(circle at 20% 10%, rgba(255, 255, 255, 0.14), transparent 28%),
+    radial-gradient(circle at 80% 0%, rgba(251, 191, 36, 0.12), transparent 26%),
+    linear-gradient(180deg, #0f172a 0%, #1e293b 42%, #111827 100%);
+  color: #f8fafc;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  min-height: 100%;
 }
 
 body {
@@ -27,30 +34,26 @@ button {
 
 .game-shell {
   min-height: 100vh;
-  padding: 24px;
-  display: grid;
-  grid-template-rows: auto 1fr auto auto;
-  gap: 20px;
-}
-
-.runner-shell {
-  min-height: 100vh;
   padding: 20px;
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  gap: 18px;
+  grid-template-rows: auto 1fr;
+  gap: 16px;
+  background:
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 24%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98));
 }
 
-.runner-hud,
-.runner-feedback,
-.runner-stage {
-  background: rgba(255, 252, 248, 0.82);
-  border: 3px solid rgba(194, 65, 12, 0.16);
+.game-hud,
+.game-result,
+.street-stage {
   border-radius: 24px;
-  box-shadow: 0 14px 30px rgba(120, 53, 15, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.78);
+  box-shadow: 0 24px 50px rgba(2, 6, 23, 0.35);
+  backdrop-filter: blur(14px);
 }
 
-.runner-hud {
+.game-hud {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
@@ -58,328 +61,376 @@ button {
   align-items: center;
 }
 
-.runner-stats {
+.hud-stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 }
 
-.runner-stat {
+.hud-stat {
   padding: 12px 14px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.88);
+  background: linear-gradient(180deg, rgba(30, 41, 59, 0.92), rgba(15, 23, 42, 0.82));
+  border: 1px solid rgba(148, 163, 184, 0.16);
 }
 
-.runner-stat-label {
+.hud-label {
   display: block;
   font-size: 12px;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #9a3412;
+  letter-spacing: 0.1em;
+  color: #7dd3fc;
 }
 
-.runner-stat-value {
+.hud-value {
   display: block;
   margin-top: 8px;
   font-size: 22px;
   font-weight: 700;
+  color: #f8fafc;
 }
 
 .hearts {
-  color: #dc2626;
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .heart {
-  margin-right: 4px;
+  line-height: 1;
 }
 
 .heart-empty {
-  color: #fca5a5;
+  opacity: 0.28;
 }
 
-.runner-language-button,
+.hud-language-button,
 .restart-button {
   border: 0;
   border-radius: 999px;
-  padding: 14px 22px;
+  padding: 12px 18px;
   font: inherit;
   font-weight: 700;
   cursor: pointer;
   transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
 
-.runner-language-button {
-  background: linear-gradient(180deg, #fff7ed 0%, #fdba74 100%);
-  color: #7c2d12;
-  box-shadow: 0 10px 18px rgba(120, 53, 15, 0.12);
+.hud-language-button {
+  background: linear-gradient(180deg, #38bdf8 0%, #0ea5e9 100%);
+  color: #eff6ff;
+  box-shadow: 0 12px 24px rgba(14, 165, 233, 0.22);
 }
 
-.runner-language-button:hover,
+.hud-language-button:hover,
 .restart-button:hover {
   transform: translateY(-2px);
 }
 
-.runner-stage {
+.street-stage {
   position: relative;
   overflow: hidden;
-  min-height: 500px;
-  background: linear-gradient(180deg, #fefce8 0%, #ffedd5 48%, #fee2e2 100%);
-  contain: layout paint style;
+  min-height: 600px;
+  outline: none;
 }
 
-.runner-backdrop,
-.runner-skyline {
+.street-backdrop {
   position: absolute;
   inset: 0;
   pointer-events: none;
 }
 
-.runner-backdrop {
-  background:
-    radial-gradient(circle at 10% 18%, rgba(255, 255, 255, 0.68), transparent 12%),
-    radial-gradient(circle at 85% 12%, rgba(255, 255, 255, 0.38), transparent 14%);
-  opacity: 0.8;
-}
-
-.runner-skyline {
-  background:
-    radial-gradient(circle at 18% 70%, rgba(251, 191, 36, 0.2), transparent 18%),
-    radial-gradient(circle at 72% 60%, rgba(249, 168, 212, 0.14), transparent 20%);
-  filter: blur(2px);
-}
-
-.runner-ground {
+.street-sky,
+.street-haze,
+.street-buildings,
+.street-road,
+.street-lane,
+.street-crosswalk,
+.street-foreground {
   position: absolute;
+  inset: 0;
+}
+
+.street-sky {
+  background:
+    radial-gradient(circle at 18% 16%, rgba(125, 211, 252, 0.24), transparent 16%),
+    radial-gradient(circle at 82% 12%, rgba(250, 204, 21, 0.18), transparent 15%),
+    linear-gradient(180deg, #0f172a 0%, #1e3a8a 30%, #1e293b 62%, #111827 100%);
+}
+
+.street-haze {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 34%),
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.08), transparent 36%);
+  mix-blend-mode: screen;
+}
+
+.street-buildings {
+  background:
+    linear-gradient(180deg, transparent 0 68%, rgba(15, 23, 42, 0.92) 68% 100%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(15, 23, 42, 0.88) 0 64px,
+      rgba(30, 41, 59, 0.86) 64px 120px,
+      rgba(2, 6, 23, 0.9) 120px 160px
+    );
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.9) 35%, black 100%);
+  opacity: 0.85;
+}
+
+.street-road {
+  top: 58%;
+  bottom: 0;
+  inset-inline: 0;
+  background:
+    linear-gradient(180deg, rgba(148, 163, 184, 0.08), transparent 16%),
+    linear-gradient(180deg, #334155 0%, #1f2937 45%, #0f172a 100%);
+  box-shadow: inset 0 18px 0 rgba(255, 255, 255, 0.06);
+}
+
+.street-lane {
+  top: 68%;
   left: 0;
   right: 0;
-  bottom: 0;
-  height: 40px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.06), transparent),
-    linear-gradient(180deg, #fdba74 0%, #f97316 100%);
-  box-shadow: inset 0 12px 0 rgba(255, 247, 237, 0.45);
+  height: 8px;
+  background: repeating-linear-gradient(90deg, rgba(253, 224, 71, 0.92) 0 72px, transparent 72px 120px);
+  opacity: 0.85;
 }
 
-.runner-world {
+.street-crosswalk {
+  top: 58%;
+  left: 10%;
+  right: 10%;
+  height: 22px;
+  background: repeating-linear-gradient(90deg, rgba(248, 250, 252, 0.72) 0 36px, transparent 36px 60px);
+  opacity: 0.4;
+}
+
+.street-foreground {
+  background:
+    linear-gradient(180deg, transparent 0 80%, rgba(2, 6, 23, 0.32) 80% 100%),
+    radial-gradient(circle at 50% 100%, rgba(15, 23, 42, 0.72), transparent 40%);
+}
+
+.street-world {
   position: absolute;
   inset: 0;
   transform-origin: 0 0;
   will-change: transform;
 }
 
-.runner-platform {
+.street-decoration-layer,
+.street-entity-layer {
   position: absolute;
-  border-radius: 18px;
-  background: linear-gradient(180deg, #ffd8a8 0%, #fb923c 100%);
-  box-shadow:
-    0 10px 18px rgba(120, 53, 15, 0.14),
-    inset 0 -6px 0 rgba(146, 64, 14, 0.18);
-  contain: layout paint;
+  inset: 0;
 }
 
-.runner-platform-box-face {
+.street-decoration {
   position: absolute;
-  inset: 6px;
-  border-radius: 12px;
-  border: 2px solid rgba(255, 248, 235, 0.7);
+  width: 34px;
+  height: 72px;
+  transform: translate(-50%, -100%);
+  border-radius: 12px 12px 8px 8px;
+}
+
+.street-decoration-streetlight {
   background:
-    linear-gradient(90deg, transparent 46%, rgba(255, 248, 235, 0.85) 46%, rgba(255, 248, 235, 0.85) 54%, transparent 54%),
-    linear-gradient(180deg, transparent 46%, rgba(255, 248, 235, 0.85) 46%, rgba(255, 248, 235, 0.85) 54%, transparent 54%);
+    linear-gradient(180deg, #fde68a 0%, #f59e0b 20%, #1f2937 20% 100%),
+    linear-gradient(90deg, transparent 0 38%, rgba(253, 224, 71, 0.92) 38% 62%, transparent 62% 100%);
+  box-shadow: 0 0 24px rgba(253, 224, 71, 0.22);
 }
 
-.runner-mouse {
+.street-decoration-barrier {
+  width: 52px;
+  height: 28px;
+  border-radius: 10px;
+  background:
+    repeating-linear-gradient(135deg, #ef4444 0 10px, #f8fafc 10px 20px),
+    linear-gradient(180deg, #fda4af, #b91c1c);
+  box-shadow: 0 10px 16px rgba(2, 6, 23, 0.3);
+}
+
+.street-pickup,
+.street-player,
+.street-enemy,
+.street-bullet,
+.street-tank {
   position: absolute;
-  left: 50%;
-  bottom: 100%;
-  transform: translate(-50%, -10px);
   display: grid;
   justify-items: center;
   gap: 4px;
-  color: #7c2d12;
-  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.45);
 }
 
-.runner-box-badge {
-  position: absolute;
-  left: 50%;
-  bottom: 100%;
-  transform: translate(-50%, -6px);
+.street-pickup {
+  transform: translate(-50%, -50%);
+  padding: 8px 10px;
+  border-radius: 16px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.street-pickup-icon,
+.street-entity-icon {
   display: grid;
   place-items: center;
-}
-
-.runner-mouse-emoji {
-  font-size: 34px;
-}
-
-.runner-box-emoji {
-  font-size: 30px;
-}
-
-.runner-mouse-level {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.82);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.runner-ground-item {
-  position: absolute;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  transform: translate(-50%, -8px);
-}
-
-.runner-ground-box-face {
-  width: 58px;
-  height: 42px;
-  border-radius: 14px;
-  background: linear-gradient(180deg, #ffd8a8 0%, #fb923c 100%);
-  box-shadow:
-    0 10px 18px rgba(120, 53, 15, 0.14),
-    inset 0 -6px 0 rgba(146, 64, 14, 0.18);
-}
-
-.runner-ground-box,
-.runner-ground-mouse {
-  position: absolute;
-  left: 50%;
-  bottom: 100%;
-  transform: translate(-50%, -8px);
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  color: #7c2d12;
-  text-shadow: 0 2px 0 rgba(255, 255, 255, 0.45);
-}
-
-.runner-cat {
-  position: absolute;
-  display: grid;
-  justify-items: center;
-  gap: 6px;
-  transform: translate3d(0, 0, 0);
-  will-change: left, bottom;
-}
-
-.runner-cat-emoji {
-  display: grid;
-  place-items: center;
-  min-width: 88px;
-  min-height: 88px;
-  font-size: 84px;
   line-height: 1;
 }
 
-.runner-cat-name {
-  padding: 4px 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.72);
-  font-size: 14px;
+.street-pickup-icon {
+  font-size: 20px;
+}
+
+.street-pickup-label,
+.street-tank-shells {
+  font-size: 12px;
   font-weight: 700;
-  color: #7c2d12;
+  color: #e2e8f0;
+  text-shadow: 0 1px 0 rgba(15, 23, 42, 0.45);
 }
 
-.runner-cat-facing-left .runner-cat-emoji {
-  transform: scaleX(-1);
+.street-player,
+.street-enemy,
+.street-tank {
+  transform: translate(-50%, -50%);
 }
 
-.runner-cat-facing-right .runner-cat-emoji {
-  transform: scaleX(1);
+.street-player {
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.22), transparent 36%), linear-gradient(180deg, #1d4ed8, #0f172a);
+  box-shadow: 0 16px 24px rgba(15, 23, 42, 0.36);
 }
 
-.runner-feedback {
+.street-player-tank {
+  background: radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.16), transparent 36%), linear-gradient(180deg, #475569, #111827);
+}
+
+.player-icon {
+  font-size: 30px;
+}
+
+.street-enemy {
+  width: 48px;
+  height: 48px;
+  border-radius: 16px;
+  background: radial-gradient(circle at 40% 30%, rgba(255, 255, 255, 0.2), transparent 36%), linear-gradient(180deg, #ef4444, #7f1d1d);
+  box-shadow: 0 14px 22px rgba(127, 29, 29, 0.32);
+}
+
+.enemy-icon,
+.tank-icon {
+  font-size: 26px;
+}
+
+.street-entity-hp {
+  font-size: 11px;
+  font-weight: 700;
+  color: #fecaca;
+}
+
+.street-bullet {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f8fafc, #38bdf8);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.6);
+}
+
+.bullet-shell {
+  background: linear-gradient(180deg, #f59e0b, #b45309);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.7);
+}
+
+.street-tank {
+  width: 84px;
+  height: 60px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #475569, #0f172a);
+  box-shadow: 0 18px 26px rgba(15, 23, 42, 0.44);
+}
+
+.street-tank-occupied {
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+}
+
+.street-tank-shells {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.game-result {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 4;
   padding: 14px 18px;
   display: grid;
   place-items: center;
-  gap: 12px;
+  gap: 10px;
   text-align: center;
+  min-width: min(420px, calc(100% - 24px));
 }
 
-.runner-feedback-pill {
+.game-result-banner {
   padding: 10px 18px;
   border-radius: 999px;
   font-size: 18px;
   font-weight: 700;
-  color: #7c2d12;
-  background: rgba(255, 255, 255, 0.84);
-  box-shadow: 0 8px 16px rgba(120, 53, 15, 0.08);
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
-.runner-feedback-success .runner-feedback-pill {
-  background: #dcfce7;
-  color: #166534;
-}
-
-.runner-feedback-warning .runner-feedback-pill {
-  background: #fef3c7;
-  color: #92400e;
-}
-
-.runner-feedback-danger .runner-feedback-pill,
-.runner-feedback-gameover .runner-feedback-pill {
-  background: #fee2e2;
-  color: #991b1b;
-}
-
-.runner-feedback-levelup .runner-feedback-pill,
-.runner-feedback-jump .runner-feedback-pill {
-  background: #e0f2fe;
-  color: #0c4a6e;
-}
-
-.runner-feedback-idle .runner-feedback-pill {
-  background: rgba(255, 255, 255, 0.84);
+.game-result-game-over .game-result-banner {
+  background: linear-gradient(180deg, rgba(185, 28, 28, 0.94), rgba(127, 29, 29, 0.94));
 }
 
 .restart-button {
   background: linear-gradient(180deg, #fb7185 0%, #dc2626 100%);
   color: #fff;
-  box-shadow: 0 10px 18px rgba(153, 27, 27, 0.18);
+  box-shadow: 0 12px 22px rgba(153, 27, 27, 0.22);
 }
 
-.runner-stage:focus-within {
-  outline: 3px solid rgba(249, 115, 22, 0.45);
+.street-stage:focus-within {
+  outline: 3px solid rgba(56, 189, 248, 0.5);
   outline-offset: 4px;
 }
 
 @media (max-width: 800px) {
-  .runner-shell {
+  .game-shell {
     padding: 14px;
-    gap: 14px;
   }
 
-  .runner-hud {
+  .game-hud {
     grid-template-columns: 1fr;
   }
 
-  .runner-stats {
+  .hud-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .runner-stage {
-    min-height: 420px;
+  .street-stage {
+    min-height: 520px;
   }
 }
 
 @media (max-width: 520px) {
-  .runner-stats {
+  .hud-stats {
     grid-template-columns: 1fr;
   }
 
-  .runner-stat-value {
+  .hud-value {
     font-size: 20px;
   }
 
-  .runner-feedback-pill {
+  .game-result-banner {
     font-size: 16px;
   }
 
-  .runner-cat-emoji {
-    min-width: 72px;
-    min-height: 72px;
-    font-size: 68px;
+  .street-stage {
+    min-height: 460px;
   }
 }

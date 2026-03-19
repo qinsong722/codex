@@ -1,25 +1,25 @@
 # Cat Box Game
 
-A cute desktop mini-game about a tiny cat choosing boxes and eating weaker mice to grow bigger.
+A street shooter mini-game where you guide the cat through combat, pickups, and a tank takeover.
 
 ## Current Gameplay
 
-- Start as a level 1 kitten with 3 hearts.
-- Pick between a safer box and a risky box.
-- A mouse pops out when the cat lands on a box.
-- If the cat level is high enough, the cat eats the mouse and grows.
-- If the mouse is too strong, the cat bounces back and loses a heart.
-- The run ends when all hearts are gone.
+- Move by following the mouse pointer.
+- Hold the fire button to keep shooting.
+- Pick up new weapons to swap your current gun.
+- Collect ammo pickups to refill your ammo.
+- Enter the tank when available, then collect shell pickups to reload it.
+- Survive the waves of enemies to keep the run going.
 
 ## Scripts
 
-- `npm install` installs project dependencies.
-- `npm run dev` starts the Vite app and opens the Electron window.
+- `npm install` installs dependencies.
+- `npm run dev` starts Vite and opens the Electron app.
 - `npm run build` builds the browser app for production.
-- `npm run test` runs the Vitest checks for rules and state.
+- `npm run test` runs the Vitest checks.
 - `npm run electron` opens the desktop shell directly.
 
 ## Project Notes
 
-- The first version uses emoji and CSS shapes as placeholders for art.
-- Future polish can replace them with cartoon cat, mouse, and box assets.
+- The game still uses lightweight emoji and CSS shape placeholders for art.
+- Future polish can replace them with dedicated street shooter assets.

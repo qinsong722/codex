@@ -1,135 +1,123 @@
 import { describe, expect, test } from "vitest";
+import { MAX_AMMO } from "../src/game/constants";
 import { LANGUAGES } from "../src/game/i18n";
 import {
-  applyJump,
-  applyLevelUp,
-  applyMovementTarget,
+  applyAmmoPickup,
+  applyDamage,
+  applyShellPickup,
+  applyWeaponPickup,
+  completeWave,
   createInitialState,
-  resolveCatch,
-  resolveFallReset,
+  enterTank,
 } from "../src/game/state";
 
 describe("createInitialState", () => {
-  test("cat starts on the ground", () => {
+  test("player starts alive at the stage center", () => {
     const state = createInitialState();
+    const { width, height } = state.world.stageBounds;
 
-    expect(state.cat.y).toBe(0);
-    expect(state.cat.vy).toBe(0);
-    expect(state.cat.onGround).toBe(true);
+    expect(state.player.alive).toBe(true);
+    expect(state.player.health).toBeGreaterThan(0);
+    expect(state.player.position).toEqual({ x: width / 2, y: height / 2 });
+    expect(state.player.target).toEqual({ x: width / 2, y: height / 2 });
   });
 
-  test("health starts at 3 and language defaults to Chinese", () => {
+  test("current weapon starts empty", () => {
     const state = createInitialState();
 
-    expect(state.health).toBe(3);
-    expect(state.language).toBe(LANGUAGES.ZH);
+    expect(state.currentWeapon).toBeNull();
   });
 
-  test("game starts in running state", () => {
+  test("ammo starts below the max", () => {
+    const state = createInitialState();
+
+    expect(state.ammo).toBeLessThan(MAX_AMMO);
+  });
+
+  test("tank starts on the map but unoccupied", () => {
+    const state = createInitialState();
+
+    expect(state.tank.position).toEqual(state.world.tankPlacement);
+    expect(state.tank.occupiedBy).toBeNull();
+  });
+
+  test("wave starts at 1", () => {
+    const state = createInitialState();
+
+    expect(state.wave).toBe(1);
+  });
+
+  test("game starts in running state with Chinese by default", () => {
     const state = createInitialState();
 
     expect(state.status).toBe("running");
     expect(state.gameOver).toBe(false);
-    expect(state.messageKey).toBe("runner.start");
+    expect(state.language).toBe(LANGUAGES.ZH);
   });
 });
 
-describe("applyJump", () => {
-  test("gives the cat upward velocity when grounded", () => {
-    const state = applyJump(createInitialState());
+describe("state transitions", () => {
+  test("picking up a weapon swaps the current weapon", () => {
+    const state = applyWeaponPickup(createInitialState(), { weapon: "rifle" });
 
-    expect(state.cat.onGround).toBe(false);
-    expect(state.cat.vy).toBeLessThan(0);
-  });
-});
-
-describe("applyMovementTarget", () => {
-  test("moves the cat to the right when requested", () => {
-    const state = applyMovementTarget(createInitialState(), "right");
-
-    expect(state.cat.vx).toBeGreaterThan(0);
-  });
-});
-
-describe("resolveCatch", () => {
-  test("catching a weak mouse increases count and growth", () => {
-    const state = resolveCatch(createInitialState(), { level: 1 });
-
-    expect(state.miceCaught).toBe(1);
-    expect(state.growth).toBe(1);
-    expect(state.health).toBe(3);
-    expect(state.messageKey).toBe("runner.catch");
+    expect(state.currentWeapon).toBe("rifle");
   });
 
-  test("stronger mouse reduces health", () => {
-    const state = resolveCatch(createInitialState(), { level: 4 });
-
-    expect(state.miceCaught).toBe(0);
-    expect(state.growth).toBe(0);
-    expect(state.health).toBe(2);
-    expect(state.messageKey).toBe("runner.hit");
-  });
-});
-
-describe("resolveFallReset", () => {
-  test("lethal falls end in a terminal game-over state", () => {
-    const state = resolveFallReset({
-      ...createInitialState(),
-      health: 1,
-      cat: {
-        ...createInitialState().cat,
-        y: 120,
-        vy: 18,
-        onGround: false,
+  test("ammo pickup increases ammo but not beyond max", () => {
+    const state = applyAmmoPickup(
+      {
+        ...createInitialState(),
+        ammo: MAX_AMMO - 5,
       },
-    });
+      { amount: 20 },
+    );
 
-    expect(state.health).toBe(0);
-    expect(state.gameOver).toBe(true);
-    expect(state.status).toBe("gameover");
-    expect(state.messageKey).toBe("runner.gameOver");
+    expect(state.ammo).toBe(MAX_AMMO);
   });
 
-  test("falling resets the cat to safe ground and removes one health", () => {
-    const state = resolveFallReset({
-      ...createInitialState(),
-      cat: {
-        ...createInitialState().cat,
-        y: 120,
-        vy: 18,
-        onGround: false,
+  test("entering the tank changes control state", () => {
+    const state = enterTank(createInitialState());
+
+    expect(state.player.controlState).toBe("tank");
+    expect(state.tank.occupiedBy).toBe("player");
+  });
+
+  test("shell pickup increases tank ammo", () => {
+    const state = applyShellPickup(
+      {
+        ...createInitialState(),
+        tank: {
+          ...createInitialState().tank,
+          shells: 1,
+        },
       },
-    });
+      { amount: 2 },
+    );
 
-    expect(state.cat.y).toBe(0);
-    expect(state.cat.vy).toBe(0);
-    expect(state.cat.onGround).toBe(true);
-    expect(state.health).toBe(2);
-    expect(state.messageKey).toBe("runner.fall");
-  });
-});
-
-describe("applyLevelUp", () => {
-  test("levels up once growth reaches the threshold", () => {
-    const state = applyLevelUp({
-      ...createInitialState(),
-      level: 1,
-      growth: 2,
-    });
-
-    expect(state.level).toBe(2);
-    expect(state.growth).toBe(0);
-    expect(state.messageKey).toBe("runner.levelUp");
+    expect(state.tank.shells).toBe(3);
   });
 
-  test("carries leftover growth through multiple levels", () => {
-    const state = applyLevelUp({
+  test("nonlethal and lethal damage use different feedback keys", () => {
+    const woundedState = applyDamage(createInitialState(), 1);
+    const lethalState = applyDamage(createInitialState(), 999);
+
+    expect(woundedState.player.health).toBeGreaterThan(0);
+    expect(woundedState.status).toBe("running");
+    expect(woundedState.messageKey).toBe("damage");
+
+    expect(lethalState.player.health).toBe(0);
+    expect(lethalState.player.alive).toBe(false);
+    expect(lethalState.status).toBe("gameover");
+    expect(lethalState.gameOver).toBe(true);
+    expect(lethalState.messageKey).toBe("damageFatal");
+  });
+
+  test("clearing a wave advances the wave counter", () => {
+    const state = completeWave({
       ...createInitialState(),
-      level: 1,
-      growth: 5,
+      enemies: [],
     });
 
-    expect(state.level).toBe(3);
-    expect(state.growth).toBe(0);
+    expect(state.wave).toBe(2);
   });
 });

@@ -1,7 +1,12 @@
-import { MAX_HEALTH, FORM_STAGES, LEVEL_UP_REQUIREMENTS } from "./constants";
-import { LANGUAGES, getStageDisplay, getText } from "./i18n";
-import { getGrowthThresholdForLevel, resolveRunnerEncounter } from "./rules";
-import { createWorld } from "./world";
+import { MAX_AMMO, MAX_HEALTH, LEVEL_UP_REQUIREMENTS, TANK_SHELL_LIMIT } from "./constants";
+import { LANGUAGES } from "./i18n";
+import { applyEnemyContact, getAmmoAfterPickup, getShellsAfterPickup, isWaveComplete } from "./rules";
+import {
+  createAmmoPickupPlacements,
+  createStreetWorld,
+  createTankShellPickupPlacements,
+  createWeaponPickupPlacements,
+} from "./world";
 
 export const GROUND_Y = 0;
 export const JUMP_VELOCITY = -14;
@@ -11,229 +16,244 @@ export const DEFAULT_SCREEN_X = 240;
 export const JUMP_BUFFER_FRAMES = 6;
 export const COYOTE_FRAMES = 5;
 
-function getCatForm(level, language = LANGUAGES.ZH) {
-  let currentStage = FORM_STAGES[0];
+const MESSAGE_TABLE = {
+  [LANGUAGES.ZH]: {
+    start: "\u6218\u6597\u5f00\u59cb\uff0c\u51c6\u5907\u5f00\u706b\u3002",
+    weaponPickup: "\u6362\u4e0a\u4e86\u65b0\u6b66\u5668\u3002",
+    ammoPickup: "\u5f39\u836f\u8865\u5145\u5b8c\u6bd5\u3002",
+    tankEnter: "\u5df2\u8fdb\u5165\u5766\u514b\u3002",
+    shellPickup: "\u5766\u514b\u70ae\u5f39\u5df2\u88c5\u586b\u3002",
+    damage: "\u53d7\u5230\u4f24\u5bb3\u3002",
+    damageFatal: "\u53d7\u5230\u81f4\u547d\u4f24\u5bb3\u3002",
+    waveClear: "\u4e0b\u4e00\u6ce2\u654c\u4eba\u6765\u88ad\u3002",
+  },
+  [LANGUAGES.EN]: {
+    start: "Battle ready.",
+    weaponPickup: "Weapon swapped.",
+    ammoPickup: "Ammo topped up.",
+    tankEnter: "Entered the tank.",
+    shellPickup: "Tank shells loaded.",
+    damage: "Took damage.",
+    damageFatal: "Took lethal damage.",
+    waveClear: "Next wave incoming.",
+  },
+};
 
-  for (const stage of FORM_STAGES) {
-    if (level >= stage.minLevel) {
-      currentStage = stage;
-    }
-  }
-
-  return {
-    ...currentStage,
-    ...getStageDisplay(currentStage.id, language),
-  };
+function getMessage(messageKey, language) {
+  return MESSAGE_TABLE[language]?.[messageKey] ?? MESSAGE_TABLE[LANGUAGES.ZH]?.[messageKey] ?? messageKey;
 }
 
-function createCat(level, language) {
-  return {
-    x: DEFAULT_SCREEN_X,
-    screenX: DEFAULT_SCREEN_X,
-    y: GROUND_Y,
-    vx: 0,
-    vy: 0,
-    onGround: true,
-    jumpBufferFrames: 0,
-    coyoteFramesRemaining: COYOTE_FRAMES,
-    level,
-    growth: 0,
-    form: getCatForm(level, language),
-  };
-}
+function createStatusPayload(state, messageKey, language = state.language) {
+  const message = getMessage(messageKey, language);
 
-function createMessage(messageKey, language) {
-  return getText(messageKey, language);
-}
-
-function syncDerivedState(state) {
   return {
     ...state,
-    cat: {
-      ...state.cat,
-      level: state.level,
-      growth: state.growth,
-      form: getCatForm(state.level, state.language),
-      screenX: state.cat.screenX ?? DEFAULT_SCREEN_X,
-      jumpBufferFrames: state.cat.jumpBufferFrames ?? 0,
-      coyoteFramesRemaining: state.cat.coyoteFramesRemaining ?? 0,
-    },
+    language,
+    messageKey,
+    message,
+    statusMessage: message,
   };
+}
+
+function createInitialPickups() {
+  return {
+    weapons: createWeaponPickupPlacements(),
+    ammo: createAmmoPickupPlacements(),
+    shells: createTankShellPickupPlacements(),
+  };
+}
+
+function removePickup(collection, pickup, matcher) {
+  if (!pickup) {
+    return collection;
+  }
+
+  return collection.filter((item) => !matcher(item, pickup));
+}
+
+function matchesWeaponPickup(item, pickup) {
+  return item.weapon === pickup.weapon && item.x === pickup.x && item.y === pickup.y;
+}
+
+function matchesAmmoPickup(item, pickup) {
+  return item.amount === pickup.amount && item.x === pickup.x && item.y === pickup.y;
+}
+
+function matchesShellPickup(item, pickup) {
+  return item.amount === pickup.amount && item.x === pickup.x && item.y === pickup.y;
 }
 
 export function createInitialState(language = LANGUAGES.ZH, random = Math.random) {
-  const level = 1;
+  const world = createStreetWorld({ random });
+  const centerX = world.stageBounds.width / 2;
+  const centerY = world.stageBounds.height / 2;
 
-  return syncDerivedState({
+  return {
     status: "running",
     gameOver: false,
     language,
-    cameraX: 0,
-    messageKey: "runner.start",
-    message: createMessage("runner.start", language),
+    messageKey: "start",
+    message: getMessage("start", language),
+    statusMessage: getMessage("start", language),
     health: MAX_HEALTH,
-    score: 0,
-    miceCaught: 0,
-    level,
-    growth: 0,
-    cat: createCat(level, language),
-    world: createWorld({ catX: 0, level, random }),
-  });
-}
-
-export function applyJump(state) {
-  const canJump = state.cat.onGround || (state.cat.coyoteFramesRemaining ?? 0) > 0;
-  if (state.gameOver || !canJump) {
-    return state;
-  }
-
-  return syncDerivedState({
-    ...state,
-    messageKey: "runner.jump",
-    message: createMessage("runner.jump", state.language),
-    cat: {
-      ...state.cat,
-      vy: JUMP_VELOCITY,
-      onGround: false,
-      jumpBufferFrames: 0,
-      coyoteFramesRemaining: 0,
+    world,
+    player: {
+      position: { x: centerX, y: centerY },
+      target: { x: centerX, y: centerY },
+      health: MAX_HEALTH,
+      alive: true,
+      controlState: "onFoot",
     },
-  });
-}
-
-export function applyMovementTarget(state, target) {
-  if (state.gameOver) {
-    return state;
-  }
-
-  const vx = target === "left" ? -RUN_SPEED : target === "right" ? RUN_SPEED : 0;
-
-  return syncDerivedState({
-    ...state,
-    cat: {
-      ...state.cat,
-      vx,
+    currentWeapon: null,
+    ammo: Math.min(30, MAX_AMMO - 1),
+    tank: {
+      position: { ...world.tankPlacement },
+      occupiedBy: null,
+      shells: 0,
     },
-  });
-}
-
-export function applyLevelUp(state) {
-  let nextState = {
-    ...state,
-    cat: {
-      ...state.cat,
-    },
+    bullets: [],
+    enemies: [],
+    pickups: createInitialPickups(),
+    wave: 1,
+    kills: 0,
   };
-
-  while (nextState.growth >= getGrowthThresholdForLevel(nextState.level)) {
-    nextState = {
-      ...nextState,
-      level: nextState.level + 1,
-      growth: nextState.growth - getGrowthThresholdForLevel(nextState.level),
-      messageKey: "runner.levelUp",
-      message: createMessage("runner.levelUp", nextState.language),
-      world: createWorld({
-        catX: nextState.cat.x,
-        level: nextState.level + 1,
-      }),
-    };
-  }
-
-  return syncDerivedState(nextState);
 }
 
-export function resolveCatch(state, mouse) {
-  if (state.gameOver) {
+export function applyWeaponPickup(state, pickup) {
+  if (!pickup?.weapon) {
     return state;
   }
 
-  const encounter = resolveRunnerEncounter({
-    catLevel: state.level,
-    mouseLevel: mouse.level,
-  });
-
-  let nextState = {
-    ...state,
-    cat: {
-      ...state.cat,
-    },
-  };
-
-  if (encounter.outcome === "eat") {
-    nextState = {
-      ...nextState,
-      miceCaught: nextState.miceCaught + 1,
-      growth: nextState.growth + encounter.growthGain,
-      score: nextState.score + 10,
-      messageKey: "runner.catch",
-      message: createMessage("runner.catch", nextState.language),
-    };
-  } else {
-    nextState = {
-      ...nextState,
-      health: nextState.health - encounter.healthLoss,
-      messageKey: "runner.hit",
-      message: createMessage("runner.hit", nextState.language),
-    };
-  }
-
-  if (nextState.health <= 0) {
-    return syncDerivedState({
-      ...nextState,
-      health: 0,
-      gameOver: true,
-      status: "gameover",
-      messageKey: "runner.gameOver",
-      message: createMessage("runner.gameOver", nextState.language),
-    });
-  }
-
-  return applyLevelUp(nextState);
-}
-
-export function resolveFallReset(state) {
-  if (state.gameOver) {
-    return state;
-  }
-
-  const nextHealth = state.health - 1;
-  if (nextHealth <= 0) {
-    return syncDerivedState({
+  return createStatusPayload(
+    {
       ...state,
-      health: 0,
-      gameOver: true,
-      status: "gameover",
-      messageKey: "runner.gameOver",
-      message: createMessage("runner.gameOver", state.language),
-      cat: {
-        ...state.cat,
-        y: FALL_RESET_Y,
-        vy: 0,
-        onGround: true,
+      currentWeapon: pickup.weapon,
+      pickups: {
+        ...state.pickups,
+        weapons: removePickup(state.pickups?.weapons ?? [], pickup, matchesWeaponPickup),
       },
-    });
-  }
+    },
+    "weaponPickup",
+  );
+}
 
-  return syncDerivedState({
+export function applyAmmoPickup(state, pickup) {
+  const amount = pickup?.amount ?? 0;
+
+  return createStatusPayload(
+    {
+      ...state,
+      ammo: getAmmoAfterPickup({ ammo: state.ammo ?? 0, amount }),
+      pickups: {
+        ...state.pickups,
+        ammo: removePickup(state.pickups?.ammo ?? [], pickup, matchesAmmoPickup),
+      },
+    },
+    "ammoPickup",
+  );
+}
+
+export function enterTank(state) {
+  return createStatusPayload(
+    {
+      ...state,
+      player: {
+        ...state.player,
+        controlState: "tank",
+        position: { ...state.tank.position },
+        target: { ...state.tank.position },
+      },
+      tank: {
+        ...state.tank,
+        occupiedBy: "player",
+      },
+    },
+    "tankEnter",
+  );
+}
+
+export function applyShellPickup(state, pickup) {
+  const amount = pickup?.amount ?? 0;
+
+  return createStatusPayload(
+    {
+      ...state,
+      tank: {
+        ...state.tank,
+        shells: getShellsAfterPickup({ shells: state.tank?.shells ?? 0, amount }),
+      },
+      pickups: {
+        ...state.pickups,
+        shells: removePickup(state.pickups?.shells ?? [], pickup, matchesShellPickup),
+      },
+    },
+    "shellPickup",
+  );
+}
+
+export function applyDamage(state, damage = 1) {
+  const nextHealth = applyEnemyContact({ health: state.player?.health ?? 0, damage });
+  const nextState = {
     ...state,
     health: nextHealth,
-    messageKey: "runner.fall",
-    message: createMessage("runner.fall", state.language),
-    cat: {
-      ...state.cat,
-      y: FALL_RESET_Y,
-      vy: 0,
-      onGround: true,
+    player: {
+      ...state.player,
+      health: nextHealth,
+      alive: nextHealth > 0,
     },
-  });
+  };
+
+  if (nextHealth <= 0) {
+    return createStatusPayload(
+      {
+        ...nextState,
+        status: "gameover",
+        gameOver: true,
+      },
+      "damageFatal",
+    );
+  }
+
+  return createStatusPayload(nextState, "damage");
+}
+
+export function completeWave(state) {
+  if (!isWaveComplete({ enemies: state.enemies ?? [] })) {
+    return state;
+  }
+
+  return createStatusPayload(
+    {
+      ...state,
+      wave: (state.wave ?? 0) + 1,
+    },
+    "waveClear",
+  );
 }
 
 export function setLanguage(state, language) {
-  return syncDerivedState({
-    ...state,
-    language,
-    message: createMessage(state.messageKey, language),
-  });
+  return createStatusPayload(state, state.messageKey ?? "start", language);
 }
 
-export { LEVEL_UP_REQUIREMENTS };
+// Legacy compatibility exports. They stay pure, but the new shooter state does not use them.
+export function applyJump(state) {
+  return state;
+}
+
+export function applyMovementTarget(state) {
+  return state;
+}
+
+export function applyLevelUp(state) {
+  return state;
+}
+
+export function resolveCatch(state) {
+  return state;
+}
+
+export function resolveFallReset(state) {
+  return state;
+}
+
+export { LEVEL_UP_REQUIREMENTS, MAX_AMMO, TANK_SHELL_LIMIT };
