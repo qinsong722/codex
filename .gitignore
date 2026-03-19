@@ -6,3 +6,10 @@ venv/
 __pycache__/
 *.pyc
 .env
+批车单/approve_orders.log
+批车单/phone_number.txt
+批车单/phone_number.txt.bak
+批车单/chrome-profile/
+批车单/edge-profile/
+批车单/.approve_bot.lock
+批车单/.drivers/
