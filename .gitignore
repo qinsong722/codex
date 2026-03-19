@@ -1,0 +1,15 @@
+approve_orders.log
+phone_number.txt
+phone_number.txt.bak
+.approve_bot.lock
+
+chrome-profile/
+edge-profile/
+playwright-chrome-profile/
+playwright-debug/
+.drivers/
+
+build/
+dist/
+__pycache__/
+*.pyc
