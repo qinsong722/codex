@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 import tkinter as tk
 from pathlib import Path
 from tkinter import messagebox, simpledialog
@@ -30,6 +31,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 
 SITE_URL = "https://b2bjoy.10086.cn/t100/#/home/index"
+LOGIN_URL = "https://b2bjoy.10086.cn/t100/#/login"
 AUDIT_URL = "https://b2bjoy.10086.cn/t100/#/travelApplyList?type=1&fromType=car"
 DEFAULT_PHONE_NUMBER = "13922200297"
 DEFAULT_APPROVER = "覃嵩"
@@ -50,6 +52,12 @@ MANUAL_CONFIRM_KEEPALIVE_SECONDS = 30
 AUDIT_STUCK_RECOVERY_SECONDS = 20
 AUDIT_STUCK_REFRESH_COOLDOWN_SECONDS = 60
 LOGIN_STUCK_REFRESH_SECONDS = 60
+LOGIN_PAGE_READY_TIMEOUT_SECONDS = 60
+LOGIN_SUBMIT_SETTLE_SECONDS = 45
+LOGIN_REFRESH_GRACE_SECONDS = 90
+SEND_CODE_READY_TIMEOUT_SECONDS = 25
+SEND_CODE_CONFIRM_TIMEOUT_SECONDS = 5
+SEND_CODE_SECOND_CLICK_SECONDS = 1.2
 CONFIG_FILE_NAME = "phone_number.txt"
 
 
@@ -170,6 +178,7 @@ def is_session_lost_error(exc: Exception) -> bool:
         "not connected to devtools",
         "web view not found",
         "target window already closed",
+        "target frame detached",
     ]
     return any(keyword in text for keyword in keywords)
 
@@ -196,6 +205,8 @@ class ApproveBot:
         self.keep_browser_open = False
         self.audit_stuck_since: float | None = None
         self.last_audit_stuck_refresh_at = 0.0
+        self.last_submitted_code = ""
+        self.last_submit_at = 0.0
         atexit.register(self.cleanup_profile_dir)
 
         if browser_name == "chrome":
@@ -208,7 +219,6 @@ class ApproveBot:
         options.add_argument("--window-size=404,876")
         options.add_argument(f"--user-data-dir={self.profile_dir}")
         options.add_argument("--no-first-run")
-        options.add_argument("--disable-background-networking")
         options.add_argument("--disable-default-apps")
         options.add_argument("--disable-sync")
         options.add_argument("--disable-features=msEdgeSidebarV2")
@@ -222,21 +232,45 @@ class ApproveBot:
             service = EdgeService(log_output=os.devnull)
         service.creationflags = subprocess.CREATE_NO_WINDOW
 
-        if browser_name == "chrome":
-            self.driver = webdriver.Chrome(options=options, service=service)
-        else:
-            self.driver = webdriver.Edge(options=options, service=service)
+        self.driver = self.launch_driver(browser_name, options, service)
         self.driver.set_window_position(80, 0)
         self.driver.set_window_size(404, 876)
         self.wait = WebDriverWait(self.driver, 25)
 
+    def launch_driver(self, browser_name: str, options, service):
+        last_exc: Exception | None = None
+        for attempt in range(1, 4):
+            driver = None
+            try:
+                if browser_name == "chrome":
+                    driver = webdriver.Chrome(options=options, service=service)
+                else:
+                    driver = webdriver.Edge(options=options, service=service)
+
+                # Touch a few lightweight properties immediately so startup-phase
+                # broken sessions fail here and can be retried cleanly.
+                _ = driver.current_url
+                _ = driver.title
+                return driver
+            except Exception as exc:
+                last_exc = exc
+                try:
+                    if driver is not None:
+                        driver.quit()
+                except Exception:
+                    pass
+                if attempt < 3 and (is_session_lost_error(exc) or is_transient_driver_comm_error(exc)):
+                    append_log(f"浏览器启动第 {attempt} 次握手失败，正在自动重试。原因: {exc}")
+                    time.sleep(2)
+                    continue
+                raise
+
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("浏览器启动失败。")
+
     def ensure_profile_dir(self, browser_name: str) -> Path:
         profile_dir = CHROME_PROFILE_DIR if browser_name == "chrome" else EDGE_PROFILE_DIR
-        if profile_dir.exists():
-            try:
-                shutil.rmtree(profile_dir)
-            except OSError:
-                pass
         profile_dir.mkdir(parents=True, exist_ok=True)
         return profile_dir
 
@@ -270,7 +304,10 @@ class ApproveBot:
                     pass
 
     def log(self, message: str) -> None:
-        print(message, flush=True)
+        try:
+            print(message, flush=True)
+        except (OSError, ValueError):
+            pass
         append_log(message)
 
     def pause_for_manual_inspection(self) -> None:
@@ -289,18 +326,38 @@ class ApproveBot:
             root.destroy()
 
     def login(self) -> None:
-        if self.open_login_page() == "authenticated":
+        self.open_login_page()
+        self.reset_login_session()
+        self.driver.get(LOGIN_URL)
+        state = self.wait_for_login_page_ready()
+        if state == "authenticated":
             self.log("检测到现有登录态，跳过登录。")
             return
-        self.prepare_login_page(send_code=True)
+        if state != "login":
+            state = self.open_login_page()
+            if state == "authenticated":
+                self.log("检测到现有登录态，跳过登录。")
+                return
+            if state != "login":
+                raise RuntimeError("未能进入登录页面。")
+        self.last_submitted_code = ""
+        self.last_submit_at = 0.0
+        sent_code_at = self.prepare_login_page(send_code=True)
         self.log("验证码已发送，请直接在当前输入框内输入验证码。")
-        self.wait_for_login_success(sent_code_at=time.time())
+        self.wait_for_login_success(sent_code_at=sent_code_at)
         time.sleep(0.05)
         self.log("登录成功。")
 
     def open_login_page(self) -> str:
         last_error: Exception | None = None
         for _ in range(3):
+            try:
+                self.driver.get(LOGIN_URL)
+                state = self.wait_for_login_page_ready()
+                if state:
+                    return state
+            except WebDriverException as exc:
+                last_error = exc
             try:
                 self.driver.get(SITE_URL)
                 state = self.wait_for_login_page_ready()
@@ -321,7 +378,7 @@ class ApproveBot:
         raise RuntimeError("未能打开登录页面。")
 
     def wait_for_login_page_ready(self) -> str | None:
-        deadline = time.time() + 15
+        deadline = time.time() + LOGIN_PAGE_READY_TIMEOUT_SECONDS
         while time.time() < deadline:
             try:
                 current_url = self.driver.current_url
@@ -344,15 +401,27 @@ class ApproveBot:
 
                 if "获取验证码" in body_text or "登录" in body_text:
                     return "login"
-
-                if not body_text:
-                    self.driver.refresh()
             except WebDriverException:
                 pass
-            time.sleep(0.3)
+            time.sleep(0.5)
         return None
 
-    def prepare_login_page(self, send_code: bool) -> None:
+    def reset_login_session(self) -> None:
+        try:
+            self.driver.delete_all_cookies()
+        except WebDriverException:
+            pass
+        try:
+            self.driver.execute_script(
+                """
+                try { window.localStorage.clear(); } catch (e) {}
+                try { window.sessionStorage.clear(); } catch (e) {}
+                """,
+            )
+        except WebDriverException:
+            pass
+
+    def prepare_login_page(self, send_code: bool) -> float | None:
         phone_input = self.wait.until(
             lambda d: next(
                 (
@@ -371,16 +440,225 @@ class ApproveBot:
         self.ensure_agreement_checked()
 
         if send_code:
-            self.click_first(
-                [
-                    (By.XPATH, "//a[contains(@class,'get-code')][last()]"),
-                    (By.XPATH, "//a[contains(@class,'get-code') and normalize-space()]"),
-                ]
-            )
+            sent_at = self.send_code_with_retry()
+        else:
+            sent_at = None
 
         self.focus_code_input()
+        return sent_at
+
+    def find_send_code_button(self):
+        selectors = [
+            (By.XPATH, "//a[contains(@class,'get-code')][last()]"),
+            (By.XPATH, "//a[contains(@class,'get-code') and normalize-space()]"),
+        ]
+        for by, value in selectors:
+            element = self.find_visible((by, value), timeout=1)
+            if element:
+                return element
+        return None
+
+    def refill_login_form(self) -> None:
+        phone_input = self.wait.until(
+            lambda d: next(
+                (
+                    el
+                    for el in d.find_elements(By.TAG_NAME, "input")
+                    if (el.get_attribute("type") or "").lower() == "tel" and el.is_displayed()
+                ),
+                None,
+            )
+        )
+        if phone_input is None:
+            raise RuntimeError("未找到手机号输入框。")
+        phone_input.clear()
+        phone_input.send_keys(self.phone_number)
+        self.ensure_agreement_checked()
+
+    def click_send_code_button(self) -> None:
+        button = self.find_send_code_button()
+        if button:
+            self.safe_click(button)
+            self.accept_send_code_consent_if_present()
+            return
+        clicked = self.driver.execute_script(
+            """
+            const candidates = Array.from(document.querySelectorAll('a,button,span,div'))
+              .filter(el => {
+                const text = (el.innerText || '').trim();
+                if (text !== '获取验证码') return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              })
+              .sort((a, b) => {
+                const ra = a.getBoundingClientRect();
+                const rb = b.getBoundingClientRect();
+                return ra.top - rb.top || rb.left - ra.left;
+              });
+            if (!candidates.length) return false;
+            candidates[0].click();
+            return true;
+            """,
+        )
+        self.accept_send_code_consent_if_present()
+        if not clicked:
+            raise RuntimeError("未找到“获取验证码”按钮。")
+
+    def accept_send_code_consent_if_present(self) -> None:
+        deadline = time.time() + 2
+        while time.time() < deadline:
+            try:
+                consent = self.find_visible(
+                    (By.XPATH, "//*[self::button or self::span or self::a or self::div][contains(normalize-space(.),'同意并发送验证码')]"),
+                    timeout=1,
+                )
+                if consent:
+                    self.safe_click(consent)
+                    time.sleep(0.3)
+                    return
+            except Exception:
+                return
+            time.sleep(0.2)
+
+    def nudge_login_page_before_retry(self) -> None:
+        try:
+            self.driver.execute_script(
+                """
+                window.scrollTo(0, 0);
+                const getCode = Array.from(document.querySelectorAll('a,button,span,div'))
+                  .find(el => {
+                    const text = (el.innerText || '').trim();
+                    if (!text.includes('获取验证码')) return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                  });
+                if (getCode) {
+                  getCode.scrollIntoView({ block: 'center', inline: 'center' });
+                }
+                """,
+            )
+        except WebDriverException:
+            pass
+
+    def login_page_send_code_ready(self) -> bool:
+        try:
+            return bool(
+                self.driver.execute_script(
+                    """
+                    const tel = Array.from(document.querySelectorAll('input')).find(
+                      el => (el.type || '').toLowerCase() === 'tel' && el.offsetParent !== null
+                    );
+                    const agreement = document.querySelector('.private-in img, .private-in');
+                    const getCode = Array.from(document.querySelectorAll('a,button,span,div'))
+                      .find(el => {
+                        const text = (el.innerText || '').trim();
+                        if (!text.includes('获取验证码')) return false;
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0;
+                      });
+                    const telValue = ((tel && tel.value) || '').replace(/\\D/g, '');
+                    return Boolean(getCode) && Boolean(agreement) && telValue.length === 11;
+                    """,
+                )
+            )
+        except WebDriverException:
+            return False
+
+    def login_code_send_confirmed(self) -> bool:
+        try:
+            return bool(
+                self.driver.execute_script(
+                    """
+                    const bodyText = document.body ? document.body.innerText : '';
+                    const getCode = Array.from(document.querySelectorAll('a,button,span,div'))
+                      .find(el => {
+                        const text = (el.innerText || '').trim();
+                        if (!text) return false;
+                        const rect = el.getBoundingClientRect();
+                        return rect.width > 0 && rect.height > 0 && (
+                          text.includes('秒') ||
+                          text.includes('重新获取') ||
+                          text.includes('重新发送')
+                        );
+                      });
+                    return Boolean(getCode) || bodyText.includes('验证码已发送');
+                    """,
+                )
+            )
+        except WebDriverException:
+            return False
+
+    def send_code_with_retry(self) -> float:
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            ready_deadline = time.time() + SEND_CODE_READY_TIMEOUT_SECONDS
+            while time.time() < ready_deadline:
+                if self.login_page_send_code_ready():
+                    break
+                time.sleep(0.3)
+            else:
+                if attempt < attempts:
+                    self.log(f"登录页尚未进入可发送验证码状态，正在第 {attempt + 1} 次重试。")
+                    self.driver.refresh()
+                    self.last_submitted_code = ""
+                    self.last_submit_at = 0.0
+                    self.wait_for_login_page_ready()
+                    self.refill_login_form()
+                    continue
+                raise RuntimeError("登录页长时间未进入可发送验证码状态。")
+
+            self.click_send_code_button()
+            sent_at = time.time()
+            second_click_done = False
+            confirm_deadline = sent_at + SEND_CODE_CONFIRM_TIMEOUT_SECONDS
+            while time.time() < confirm_deadline:
+                if self.login_code_send_confirmed():
+                    return sent_at
+                if not second_click_done and time.time() - sent_at >= SEND_CODE_SECOND_CLICK_SECONDS:
+                    try:
+                        self.click_send_code_button()
+                    except Exception:
+                        pass
+                    second_click_done = True
+                time.sleep(0.3)
+
+            if attempt < attempts:
+                self.log(f"本次未确认验证码已发出，正在第 {attempt + 1} 次重试。")
+                self.nudge_login_page_before_retry()
+                self.driver.refresh()
+                self.last_submitted_code = ""
+                self.last_submit_at = 0.0
+                self.wait_for_login_page_ready()
+                self.refill_login_form()
+                continue
+
+        raise RuntimeError("多次尝试后仍未确认验证码发送成功。")
+
+    def agreement_looks_checked(self) -> bool:
+        try:
+            return bool(
+                self.driver.execute_script(
+                    """
+                    const container = document.querySelector('.private-in');
+                    if (!container) return false;
+                    const toggle = container.querySelector('input[type="checkbox"], input[type="radio"]');
+                    if (toggle) return Boolean(toggle.checked);
+                    if (container.matches('.checked, .active, .is-checked, .selected')) return true;
+                    if (container.querySelector('.checked, .active, .is-checked, .selected, [aria-checked="true"]')) return true;
+                    const img = container.querySelector('img');
+                    if (!img) return false;
+                    const merged = `${img.className || ''} ${img.getAttribute('src') || ''}`.toLowerCase();
+                    return /checked|active|selected/.test(merged);
+                    """,
+                )
+            )
+        except WebDriverException:
+            return False
 
     def ensure_agreement_checked(self) -> None:
+        if self.agreement_looks_checked():
+            return
+
         selectors = [
             (By.CSS_SELECTOR, ".private-in img"),
             (By.XPATH, "//div[contains(@class,'private-in')]//img"),
@@ -393,7 +671,8 @@ class ApproveBot:
             try:
                 self.safe_click(element)
                 time.sleep(0.2)
-                return
+                if self.agreement_looks_checked():
+                    return
             except Exception:
                 continue
 
@@ -1476,8 +1755,11 @@ class ApproveBot:
         while time.time() < deadline:
             try:
                 self.dismiss_noise()
-                self.keep_code_input_focused()
-                self.try_submit_login_when_code_ready()
+                code = self.get_entered_code()
+                submit_in_progress = self.login_submit_in_progress(code)
+                if len(code) < 6:
+                    self.keep_code_input_focused()
+                submitted = self.try_submit_login_when_code_ready(code)
 
                 current_url = self.driver.current_url
                 if "#/login" not in current_url:
@@ -1487,11 +1769,22 @@ class ApproveBot:
                 if "首页" in body_text or "查看申请单" in body_text or "申请单审批" in body_text:
                     return
 
+                if submitted:
+                    self.log("检测到验证码已输满，已点击登录，等待页面跳转。")
+
                 waited_long_enough = time.time() - sent_code_at >= LOGIN_STUCK_REFRESH_SECONDS
                 should_refresh = time.time() - last_refresh_at >= LOGIN_STUCK_REFRESH_SECONDS
-                if waited_long_enough and should_refresh and self.login_page_looks_stuck():
+                refresh_grace_expired = time.time() - self.last_submit_at >= LOGIN_REFRESH_GRACE_SECONDS
+                if (
+                    waited_long_enough
+                    and should_refresh
+                    and refresh_grace_expired
+                    and self.login_page_looks_stuck()
+                ):
                     self.log("登录页加载异常，正在自动刷新重试。")
                     self.driver.refresh()
+                    self.last_submitted_code = ""
+                    self.last_submit_at = 0.0
                     self.prepare_login_page(send_code=True)
                     sent_code_at = time.time()
                     last_refresh_at = sent_code_at
@@ -1499,32 +1792,58 @@ class ApproveBot:
                 time.sleep(1)
                 continue
 
-            time.sleep(1)
+            if submitted or submit_in_progress:
+                time.sleep(0.2)
+            else:
+                time.sleep(1)
 
         raise TimeoutException("等待登录成功超时。")
 
-    def try_submit_login_when_code_ready(self) -> None:
+    def get_entered_code(self) -> str:
         if "#/login" not in self.driver.current_url:
-            return
+            return ""
 
         code_input = self.find_visible(
             (By.XPATH, "//input[@maxlength='6' or contains(@placeholder,'验证码')]"),
             timeout=1,
         )
         if not code_input:
-            return
+            return ""
 
         value = (code_input.get_attribute("value") or "").strip()
-        digits = "".join(ch for ch in value if ch.isdigit())
+        return "".join(ch for ch in value if ch.isdigit())
+
+    def try_submit_login_when_code_ready(self, digits: str | None = None) -> bool:
+        if "#/login" not in self.driver.current_url:
+            return False
+
+        digits = digits if digits is not None else self.get_entered_code()
         if len(digits) != 6:
-            return
+            return False
 
         login_button = self.find_login_submit_button()
         if not login_button:
-            return
+            return False
+
+        now = time.time()
+        if self.last_submitted_code == digits and now - self.last_submit_at < 20:
+            return False
 
         self.safe_click(login_button)
+        self.last_submitted_code = digits
+        self.last_submit_at = now
         time.sleep(0.3)
+        return True
+
+    def login_submit_in_progress(self, digits: str | None = None) -> bool:
+        if not self.last_submit_at:
+            return False
+        if "#/login" not in self.driver.current_url:
+            return False
+        digits = digits if digits is not None else self.get_entered_code()
+        if len(digits) != 6:
+            return False
+        return time.time() - self.last_submit_at < LOGIN_SUBMIT_SETTLE_SECONDS
 
     def find_login_submit_button(self):
         candidates = []
@@ -1548,6 +1867,8 @@ class ApproveBot:
 
     def login_page_looks_stuck(self) -> bool:
         try:
+            if self.login_submit_in_progress():
+                return False
             return self.driver.execute_script(
                 """
                 const bodyText = document.body ? document.body.innerText : '';
@@ -1573,7 +1894,13 @@ class ApproveBot:
         else:
             return
 
-        if "#/login" in current_url or "获取验证码" in body_text:
+        if self.login_submit_in_progress():
+            return
+
+        tel_input = self.find_visible((By.XPATH, "//input[@type='tel' or @maxlength='11']"), timeout=1)
+        code_input = self.find_visible((By.XPATH, "//input[@maxlength='6' or contains(@placeholder,'验证码')]"), timeout=1)
+        definitely_on_login_page = "#/login" in current_url and tel_input is not None and code_input is not None
+        if definitely_on_login_page:
             self.log("检测到账号已退出，正在自动重新登录。")
             for _ in range(2):
                 try:
@@ -1692,13 +2019,6 @@ def get_browser_binary() -> tuple[str, Path]:
     standard_edge = EDGE_BINARY_CANDIDATES[:2]
     fallback_edge = EDGE_BINARY_CANDIDATES[2:]
 
-    chrome_driver = get_local_chromedriver_path()
-    if chrome_driver:
-        for candidate in CHROME_BINARY_CANDIDATES:
-            path = Path(candidate)
-            if path.exists():
-                return "chrome", path
-
     for candidate in standard_edge:
         path = Path(candidate)
         if path.exists():
@@ -1708,6 +2028,13 @@ def get_browser_binary() -> tuple[str, Path]:
         path = Path(candidate)
         if path.exists():
             return "edge", path
+
+    chrome_driver = get_local_chromedriver_path()
+    if chrome_driver:
+        for candidate in CHROME_BINARY_CANDIDATES:
+            path = Path(candidate)
+            if path.exists():
+                return "chrome", path
 
     joined = ", ".join(standard_edge + CHROME_BINARY_CANDIDATES + fallback_edge)
     raise FileNotFoundError(f"未找到可用的浏览器: {joined}")
@@ -1774,6 +2101,10 @@ def main() -> int:
             except WebDriverException as exc:
                 append_log(f"WebDriverException: {exc}")
                 if is_session_lost_error(exc):
+                    if attempt < 2:
+                        append_log("检测到浏览器会话断开，正在自动重试一次。")
+                        time.sleep(2)
+                        continue
                     append_log("检测到浏览器会话断开，本次停止运行。")
                     return 0
                 if is_transient_driver_comm_error(exc) and attempt < 2:
@@ -1786,6 +2117,7 @@ def main() -> int:
                 return 1
             except Exception as exc:
                 append_log(f"未预期异常: {exc}")
+                append_log(traceback.format_exc())
                 if is_transient_driver_comm_error(exc) and attempt < 2:
                     append_log("检测到本地通信超时，正在自动重试一次。")
                     time.sleep(2)
@@ -1796,6 +2128,7 @@ def main() -> int:
         return 130
     except Exception as exc:
         append_log(f"启动失败: {exc}")
+        append_log(traceback.format_exc())
         return 1
 
 

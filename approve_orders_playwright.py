@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import shutil
 import sys
 import time
@@ -15,6 +16,7 @@ from playwright.sync_api import sync_playwright
 
 
 SITE_URL = "https://b2bjoy.10086.cn/t100/#/home/index"
+LOGIN_URL = "https://b2bjoy.10086.cn/t100/#/login"
 AUDIT_URL = "https://b2bjoy.10086.cn/t100/#/travelApplyList?type=1&fromType=car"
 CONFIG_FILE_NAME = "phone_number.txt"
 CHROME_BINARY_CANDIDATES = [
@@ -41,12 +43,45 @@ CONFIG_FILE = APP_DIR / CONFIG_FILE_NAME
 LOG_FILE = APP_DIR / "approve_orders.log"
 PLAYWRIGHT_PROFILE_DIR = APP_DIR / PLAYWRIGHT_PROFILE_DIR_NAME
 PLAYWRIGHT_DEBUG_DIR = APP_DIR / "playwright-debug"
+LOCK_FILE = APP_DIR / ".approve_playwright.lock"
 
 
 def append_log(message: str) -> None:
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
     with LOG_FILE.open("a", encoding="utf-8") as fh:
         fh.write(f"[{timestamp}] [PW] {message}\n")
+
+
+def process_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def acquire_single_instance_lock() -> None:
+    if LOCK_FILE.exists():
+        raw = LOCK_FILE.read_text(encoding="utf-8").strip()
+        try:
+            existing_pid = int(raw)
+        except ValueError:
+            existing_pid = 0
+        if existing_pid and process_is_running(existing_pid):
+            raise RuntimeError(f"已有 Playwright 实例在运行，PID={existing_pid}。请先关闭旧实例后再重试。")
+        LOCK_FILE.unlink(missing_ok=True)
+    LOCK_FILE.write_text(str(os.getpid()), encoding="utf-8")
+
+
+def release_single_instance_lock() -> None:
+    if not LOCK_FILE.exists():
+        return
+    try:
+        raw = LOCK_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return
+    if raw == str(os.getpid()):
+        LOCK_FILE.unlink(missing_ok=True)
 
 
 def hide_console_window() -> None:
@@ -315,12 +350,15 @@ class PlaywrightApproveBot:
     def open_login_page(self) -> str:
         self.set_step("open_login_page")
         last_error: Exception | None = None
-        for target in (SITE_URL, AUDIT_URL):
+        for target in (LOGIN_URL, SITE_URL, AUDIT_URL):
             try:
                 self.page.goto(target, wait_until="commit", timeout=20_000)
                 state = self.wait_for_login_page_ready()
                 if state:
                     return state
+                current_url = self.page.url
+                if current_url.startswith("https://b2bjoy.10086.cn/t100/#/"):
+                    return "login"
             except Exception as exc:
                 last_error = exc
         if last_error is not None:
@@ -328,18 +366,23 @@ class PlaywrightApproveBot:
         raise RuntimeError("未能打开登录页面。")
 
     def wait_for_login_page_ready(self) -> str | None:
-        deadline = time.time() + 35
+        deadline = time.time() + 60
         last_soft_wait_log_at = 0.0
         while time.time() < deadline:
             try:
                 current_url = self.page.url
                 body_text = self.page_text()
+                body_html = self.page.locator("body").inner_html(timeout=1_000)
+                if "#/login" in current_url:
+                    return "login"
                 if "#/travelApplyList" in current_url and ("申请单审批" in body_text or "待审批" in body_text):
                     return "authenticated"
                 phone_input = self.page.locator("input[type='tel']").first
                 if phone_input.count() > 0 and phone_input.is_visible():
                     return "login"
                 if "获取验证码" in body_text or "登录" in body_text:
+                    return "login"
+                if any(marker in body_html for marker in ("请输入11位手机号码", "请输入验证码", "获取验证码", "登录")):
                     return "login"
                 # 这个站点首屏经常先只渲染应用壳子，body 一段时间内会接近空白。
                 # 这里先耐心等，不要过早 reload 把它自己的启动过程打断。
@@ -348,7 +391,7 @@ class PlaywrightApproveBot:
                     if now - last_soft_wait_log_at >= 8:
                         self.log("登录页首屏仍在渲染，继续等待。")
                         last_soft_wait_log_at = now
-                    if self.login_page_needs_hard_reload():
+                    if self.login_page_needs_hard_reload(body_text=body_text):
                         self.log("登录页处于空白/错误态，执行一次重载。")
                         self.page.reload(wait_until="commit", timeout=20_000)
                         time.sleep(0.8)
@@ -358,17 +401,24 @@ class PlaywrightApproveBot:
         return None
 
     def wait_for_login_dom_ready(self) -> None:
-        deadline = time.time() + 25
+        deadline = time.time() + 60
+        last_wait_log_at = 0.0
         while time.time() < deadline:
             try:
-                if self.page.locator("input[type='tel']").first.count() > 0:
+                phone_input = self.page.locator("input[type='tel'], input[placeholder*='手机']").first
+                if phone_input.count() > 0 and phone_input.is_visible():
                     return
                 body_html = self.page.locator("body").inner_html(timeout=1_000)
                 if "获取验证码" in body_html or "验证码" in body_html or "登录" in body_html:
                     return
             except PlaywrightError:
                 pass
+            now = time.time()
+            if now - last_wait_log_at >= 10:
+                self.log("登录页 DOM 仍在渲染，继续等待。")
+                last_wait_log_at = now
             time.sleep(0.5)
+        raise RuntimeError("登录页已打开，但输入控件长时间未渲染完成。")
 
     def login(self) -> None:
         self.open_login_page()
@@ -381,35 +431,65 @@ class PlaywrightApproveBot:
         self.log("登录成功。")
 
     def prepare_login_page(self) -> None:
+        self.refill_login_form()
+        self.wait_for_login_form_ready()
+        self.send_code_with_retry()
+        self.focus_code_input()
+
+    def refill_login_form(self) -> None:
         phone_input = self.page.locator("input[type='tel']").first
         phone_input.wait_for(state="visible")
         phone_input.click()
         phone_input.fill(self.phone_number)
         self.ensure_agreement_checked()
-        self.refresh_login_page_if_half_loaded()
-        self.send_code_with_retry()
-        self.focus_code_input()
 
-    def refresh_login_page_if_half_loaded(self) -> None:
-        deadline = time.time() + 18
+    def wait_for_login_form_ready(self) -> None:
+        deadline = time.time() + 25
+        spinner_seen = False
         while time.time() < deadline:
             if not self.login_page_looks_stuck():
                 return
+            try:
+                spinner_seen = spinner_seen or self.page.locator(
+                    ".van-loading:visible, .el-loading-mask:visible, .loading:visible"
+                ).count() > 0
+            except PlaywrightError:
+                pass
             time.sleep(0.3)
 
         if not self.login_page_needs_hard_reload():
-            self.log("登录页加载较慢，继续等待，不再频繁刷新。")
+            if spinner_seen:
+                self.log("登录页仍在转圈，继续等待，不再提前点击获取验证码。")
+            else:
+                self.log("登录页加载较慢，继续等待，不再频繁刷新。")
             return
 
         self.log("检测到登录页进入空白/错误态，执行一次硬刷新。")
         self.page.reload(wait_until="commit", timeout=20_000)
         time.sleep(0.5)
+        self.refill_login_form()
 
-        phone_input = self.page.locator("input[type='tel']").first
-        phone_input.wait_for(state="visible")
-        phone_input.click()
-        phone_input.fill(self.phone_number)
-        self.ensure_agreement_checked()
+    def login_spinner_visible(self) -> bool:
+        try:
+            return self.page.locator(".van-loading:visible, .el-loading-mask:visible, .loading:visible").count() > 0
+        except PlaywrightError:
+            return False
+
+    def wait_for_spinner_to_clear(self, timeout_seconds: float = 20.0) -> bool:
+        deadline = time.time() + timeout_seconds
+        while time.time() < deadline:
+            if not self.login_spinner_visible():
+                return True
+            time.sleep(0.3)
+        return False
+
+    def soft_reload_login_page(self) -> None:
+        self.log("登录页长时间转圈，执行一次受控重载后重试。")
+        self.page.reload(wait_until="commit", timeout=20_000)
+        time.sleep(0.8)
+        self.wait_for_login_dom_ready()
+        self.refill_login_form()
+        self.wait_for_login_form_ready()
 
     def ensure_agreement_checked(self) -> None:
         selectors = [
@@ -447,6 +527,11 @@ class PlaywrightApproveBot:
 
     def send_code_with_retry(self) -> None:
         for attempt in range(2):
+            if not self.wait_for_spinner_to_clear(timeout_seconds=20):
+                if attempt < 1:
+                    self.soft_reload_login_page()
+                    continue
+                raise RuntimeError("登录页长时间转圈，未进入可发送验证码状态。")
             self.click_get_code()
             if self.wait_for_code_sent_ready():
                 return
@@ -462,23 +547,21 @@ class PlaywrightApproveBot:
         raise RuntimeError("已尝试获取验证码，但页面始终未进入可输入状态。")
 
     def wait_for_code_sent_ready(self) -> bool:
-        deadline = time.time() + 8
+        deadline = time.time() + 12
         while time.time() < deadline:
             try:
                 body_text = self.page_text()
-                code_input = self.page.locator("input[maxlength='6'], input[placeholder*='验证码']").first
-                if code_input.count() > 0 and code_input.is_visible():
-                    disabled = code_input.get_attribute("disabled")
-                    readonly = code_input.get_attribute("readonly")
-                    if disabled is None and readonly is None:
-                        return True
-
-                get_code_text = self.page.locator("text=获取验证码").all_inner_texts()
-                if any(any(ch.isdigit() for ch in text) for text in get_code_text):
+                get_code_texts = self.page.locator("a.get-code, text=获取验证码").all_inner_texts()
+                normalized = [normalize_text(text) for text in get_code_texts if text.strip()]
+                if any(any(ch.isdigit() for ch in text) for text in normalized):
                     return True
-
                 if "验证码已发送" in body_text:
                     return True
+                if any(text and text != "获取验证码" for text in normalized):
+                    return True
+                if self.login_spinner_visible():
+                    time.sleep(0.3)
+                    continue
             except PlaywrightError:
                 pass
             time.sleep(0.3)
@@ -571,14 +654,12 @@ class PlaywrightApproveBot:
         spinner = self.page.locator(".van-loading:visible, .el-loading-mask:visible, .loading:visible").count()
         return bool(spinner) or not (visible_inputs >= 2 and "获取验证码" in body_text)
 
-    def login_page_needs_hard_reload(self) -> bool:
-        body_text = self.page_text()
+    def login_page_needs_hard_reload(self, body_text: str | None = None) -> bool:
+        body_text = self.page_text() if body_text is None else body_text
         current_url = self.page.url
         if current_url.startswith("chrome-error://"):
             return True
         if "ERR_NAME_NOT_RESOLVED" in body_text or "无法访问此网站" in body_text:
-            return True
-        if not body_text.strip():
             return True
         return False
 
@@ -868,8 +949,12 @@ class PlaywrightApproveBot:
 
 def main() -> None:
     hide_console_window()
-    bot = PlaywrightApproveBot()
-    bot.run()
+    acquire_single_instance_lock()
+    try:
+        bot = PlaywrightApproveBot()
+        bot.run()
+    finally:
+        release_single_instance_lock()
 
 
 if __name__ == "__main__":
