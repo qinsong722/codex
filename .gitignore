@@ -4,3 +4,5 @@ logs/
 debug/
 *.pyc
 drivers/*.zip
+tmp_huang_detail/
+一键启动待办审批.bat

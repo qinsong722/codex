@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
+import socket
 import subprocess
 import sys
-import tempfile
 import time
 from pathlib import Path
 
@@ -26,13 +25,17 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 
-LOGIN_URL = "http://oa.hq.cmcc"
+LOGIN_URL = "http://oa.hq.cmcc/portal-new/login"
 TODO_URL = "http://todo.hq.cmcc/backlog/cmit/web/index/todo?menu=DB&group=province&company=GD&role=ALL"
-TARGET_STAGE = "部门落实"
+TARGET_STAGES = ("部门落实", "主办部门内部落实")
 DEFAULT_HEADLESS = False
 WAIT_SHORT = 5
 WAIT_MEDIUM = 10
 WAIT_LONG = 20
+WAIT_IDLE_RETRY = 15
+WAIT_TODO_LOAD = 60
+WAIT_TODO_TAB_GRACE = 20
+DEFAULT_DEBUGGER_ADDRESS = "127.0.0.1:9222"
 
 BROWSER_CONFIGS = {
     "chrome": {
@@ -59,6 +62,12 @@ def resource_path(relative_path: str) -> Path:
     return Path(base) / relative_path
 
 
+def app_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
 def setup_logging(log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handlers = [
@@ -83,13 +92,18 @@ def pause_before_exit(message: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='自动处理 OA 待办列表中“当前环节”为“部门落实”的单据。'
+        description='自动处理 OA 待办列表中“当前环节”为“部门落实”或“主办部门内部落实”的单据。'
     )
     parser.add_argument(
         "--browser",
         choices=["chrome", "edge"],
         default="chrome",
         help='指定启动浏览器，默认是 "chrome"。',
+    )
+    parser.add_argument(
+        "--attach-debugger",
+        default="",
+        help=f'附着到已打开浏览器的 DevTools 地址，例如 "{DEFAULT_DEBUGGER_ADDRESS}"。',
     )
     parser.add_argument(
         "--manual-login",
@@ -141,13 +155,52 @@ def force_close_browser_processes(browser: str) -> None:
     time.sleep(2)
 
 
+def wait_for_debugger_endpoint(debugger_address: str, timeout: int = WAIT_LONG) -> None:
+    host, port_text = debugger_address.split(":", 1)
+    port = int(port_text)
+    deadline = time.time() + timeout
+    last_error = ""
+
+    while time.time() < deadline:
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                return
+        except OSError as exc:
+            last_error = str(exc)
+            time.sleep(1)
+
+    raise RuntimeError(f"等待浏览器调试端口 {debugger_address} 超时: {last_error or '端口未就绪'}")
+
+
+def start_browser_for_attach(browser: str, debugger_address: str) -> None:
+    browser_exe = find_browser_exe(browser)
+    host, port = debugger_address.split(":", 1)
+    user_data_dir = resolve_user_data_dir(browser, "")
+    force_close_browser_processes(browser)
+    subprocess.Popen(
+        [
+            str(browser_exe),
+            f"--remote-debugging-address={host}",
+            f"--remote-debugging-port={port}",
+            f"--user-data-dir={user_data_dir}",
+            "--profile-directory=Default",
+            "--no-first-run",
+            "--no-default-browser-check",
+            LOGIN_URL,
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    wait_for_debugger_endpoint(debugger_address, timeout=30)
+
+
 def resolve_user_data_dir(browser: str, cli_value: str) -> Path:
     if cli_value:
         return Path(cli_value)
 
     # Use an isolated profile by default so old Chrome versions start reliably
     # and do not depend on the user's system browser profile state.
-    app_dir = Path(__file__).resolve().parent
+    app_dir = app_base_dir()
     profile_root = app_dir / "browser-profile" / browser
     profile_root.mkdir(parents=True, exist_ok=True)
     return profile_root
@@ -201,8 +254,22 @@ def build_driver(*, browser: str, headless: bool, user_data_dir: Path, profile_n
     return driver
 
 
+def attach_to_debugger(*, browser: str, debugger_address: str) -> WebDriver:
+    wait_for_debugger_endpoint(debugger_address, timeout=5)
+    chromedriver_exe = find_chromedriver()
+    options = Options()
+    options.add_experimental_option("debuggerAddress", debugger_address)
+    if browser == "edge":
+        browser_exe = find_browser_exe(browser)
+        options.binary_location = str(browser_exe)
+    service = Service(executable_path=str(chromedriver_exe))
+    driver = ChromeDriver(service=service, options=options)
+    driver.set_page_load_timeout(WAIT_LONG)
+    return driver
+
+
 def save_debug_snapshot(driver: WebDriver, name: str) -> None:
-    debug_dir = Path(__file__).resolve().parent / "debug"
+    debug_dir = app_base_dir() / "debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     png_path = debug_dir / f"{stamp}-{name}.png"
@@ -218,7 +285,7 @@ def save_debug_snapshot(driver: WebDriver, name: str) -> None:
 
 
 def append_debug_text(name: str, content: str) -> None:
-    debug_dir = Path(__file__).resolve().parent / "debug"
+    debug_dir = app_base_dir() / "debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     (debug_dir / f"{stamp}-{name}.txt").write_text(content, encoding="utf-8")
@@ -261,10 +328,40 @@ def body_text(driver: WebDriver) -> str:
         return ""
 
 
+def current_page_meta(driver: WebDriver) -> str:
+    try:
+        title = driver.title
+    except WebDriverException:
+        title = ""
+    try:
+        url = driver.current_url
+    except WebDriverException:
+        url = ""
+    text = normalize_cell_text(body_text(driver))[:2000]
+    return f"title={title}\nurl={url}\ntext={text}"
+
+
+def wait_for_loading_complete(driver: WebDriver, timeout: int = WAIT_TODO_LOAD) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            loading_masks = driver.find_elements(
+                By.XPATH,
+                "//*[contains(@class, 'el-loading-mask') or contains(@class, 'is-loading') or contains(normalize-space(.), '加载中')]",
+            )
+            visible_masks = [mask for mask in loading_masks if mask.is_displayed()]
+            if not visible_masks:
+                return
+        except WebDriverException:
+            return
+        time.sleep(1)
+
+
 def wait_for_todo_table(driver: WebDriver, allow_goto: bool = True) -> None:
     if allow_goto:
         driver.get(TODO_URL)
-    deadline = time.time() + WAIT_LONG
+    wait_for_loading_complete(driver, timeout=WAIT_TODO_LOAD)
+    deadline = time.time() + WAIT_TODO_LOAD
     markers = ["公文待办", "当前环节", "标题", "接收日期", "每页", "共"]
 
     while time.time() < deadline:
@@ -273,6 +370,24 @@ def wait_for_todo_table(driver: WebDriver, allow_goto: bool = True) -> None:
                 switch_to_frame_path(driver, path)
                 text = body_text(driver)
                 if any(marker in text for marker in markers):
+                    driver.switch_to.default_content()
+                    return
+                element_tables = driver.find_elements(By.XPATH, "//table[contains(@class, 'el-table__body')]")
+                if element_tables:
+                    headers = driver.find_elements(
+                        By.XPATH,
+                        "//table[contains(@class, 'el-table__header')]//*[self::th or self::td]//div[contains(@class, 'cell')]",
+                    )
+                    header_texts = [normalize_cell_text(header.text) for header in headers if normalize_cell_text(header.text)]
+                    if "标题" in header_texts and "当前环节" in header_texts:
+                        driver.switch_to.default_content()
+                        return
+                component_rows = driver.find_elements(
+                    By.XPATH,
+                    "//*[contains(@class, 'el-table__row')]//*[contains(@class, 'activityName')]"
+                    + "/*[" + stage_xpath_predicate() + "]",
+                )
+                if component_rows:
                     driver.switch_to.default_content()
                     return
                 rows = driver.find_elements(By.TAG_NAME, "tr")
@@ -285,7 +400,10 @@ def wait_for_todo_table(driver: WebDriver, allow_goto: bool = True) -> None:
                 driver.switch_to.default_content()
         time.sleep(1)
 
+    append_debug_text("todo-detect-failed-meta", current_page_meta(driver))
     save_debug_snapshot(driver, "todo-detect-failed")
+    if is_login_page(driver):
+        raise TimeoutException("未识别到待办列表页标记，当前仍停留在登录页，可能登录状态未保留。")
     raise TimeoutException("未识别到待办列表页标记。")
 
 
@@ -300,46 +418,211 @@ def click_element(driver: WebDriver, element) -> None:
         driver.execute_script("arguments[0].click();", element)
 
 
-def get_target_rows(driver: WebDriver) -> list[tuple[list[int], object]]:
-    matches: list[tuple[list[int], object]] = []
-    stage_markers = [TARGET_STAGE, "部门落实", "落实"]
-    debug_lines: list[str] = []
+def click_submit_button_by_geometry(driver: WebDriver, row) -> bool:
+    try:
+        clicked = driver.execute_script(
+            """
+            const row = arguments[0];
+            if (!row) return false;
+            const rowRect = row.getBoundingClientRect();
+            const rowMidY = rowRect.top + rowRect.height / 2;
+            const rowRightX = rowRect.right;
 
-    candidate_xpaths = [
-        "//tr",
-        "//*[@role='row']",
-        "//tbody/*",
-        "//ul/li",
-        "//div[contains(@class, 'row')]",
-        "//div[contains(@class, 'list') or contains(@class, 'table')]//*[self::div or self::li][.//a]",
-    ]
+            const candidates = Array.from(document.querySelectorAll('button, a, span, div'))
+              .filter((el) => {
+                const text = (el.innerText || el.textContent || '').trim();
+                if (text !== '提交') return false;
+                const style = window.getComputedStyle(el);
+                if (style.visibility === 'hidden' || style.display === 'none') return false;
+                const rect = el.getBoundingClientRect();
+                if (rect.width <= 0 || rect.height <= 0) return false;
+                if (rect.right <= rowRightX) return false;
+                return true;
+              })
+              .map((el) => {
+                const rect = el.getBoundingClientRect();
+                const midY = rect.top + rect.height / 2;
+                const score = Math.abs(midY - rowMidY) + Math.max(0, rowRightX - rect.left) * 0.01;
+                return { el, rect, score };
+              })
+              .sort((a, b) => a.score - b.score);
+
+            const best = candidates[0];
+            if (!best) return false;
+
+            best.el.scrollIntoView({ block: 'center', inline: 'center' });
+            best.el.click();
+            return true;
+            """,
+            row,
+        )
+        return bool(clicked)
+    except WebDriverException:
+        return False
+
+
+def normalize_cell_text(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def extract_table_headers(table) -> list[str]:
+    header_rows = table.find_elements(By.XPATH, ".//thead/tr")
+    if not header_rows:
+        header_rows = table.find_elements(By.XPATH, ".//tr[th]")
+    if not header_rows:
+        return []
+
+    headers: list[str] = []
+    for cell in header_rows[0].find_elements(By.XPATH, "./th|./td"):
+        headers.append(normalize_cell_text(cell.text))
+    return headers
+
+
+def find_column_index(headers: list[str], target: str) -> int:
+    for index, header in enumerate(headers):
+        if normalize_cell_text(header) == target:
+            return index
+    return -1
+
+
+def stage_xpath_predicate() -> str:
+    return " or ".join([f"normalize-space(.)='{stage}'" for stage in TARGET_STAGES])
+
+
+def find_clickable_title_in_row(row):
+    try:
+        exact_targets = row.find_elements(
+            By.XPATH,
+            ".//*[contains(@class, 'item-title--click') or contains(@class, 'content-container') or contains(@class, 'itemTitle')]",
+        )
+        for target in exact_targets:
+            if normalize_cell_text(target.text):
+                return target
+    except WebDriverException:
+        pass
+
+    try:
+        exact_links = row.find_elements(
+            By.XPATH,
+            ".//*[contains(@class, 'link') and normalize-space(.)!='']",
+        )
+        for target in exact_links:
+            if normalize_cell_text(target.text):
+                return target
+    except WebDriverException:
+        pass
+
+    try:
+        links = row.find_elements(By.TAG_NAME, "a")
+        for link in links:
+            if normalize_cell_text(link.text):
+                return link
+    except WebDriverException:
+        pass
+
+    try:
+        title_candidates = row.find_elements(
+            By.XPATH,
+            ".//*[self::span or self::div][normalize-space(.)!='' "
+            "and not(contains(normalize-space(.), '部门落实')) "
+            "and not(contains(normalize-space(.), '主办部门内部落实'))]",
+        )
+        for candidate in title_candidates:
+            if normalize_cell_text(candidate.text):
+                return candidate
+    except WebDriverException:
+        pass
+
+    return None
+
+
+def get_target_rows_from_generic_layout(
+    driver: WebDriver,
+    path: list[int],
+    excluded_titles: set[str] | None = None,
+) -> list[tuple[list[int], object, int]]:
+    matches: list[tuple[list[int], object, int]] = []
+    excluded_titles = excluded_titles or set()
+    stage_elements = driver.find_elements(
+        By.XPATH,
+        "//*[self::td or self::div or self::span][" + stage_xpath_predicate() + "]",
+    )
+
+    seen_ids: set[str] = set()
+    for stage_element in stage_elements:
+        try:
+            row = stage_element.find_element(
+                By.XPATH,
+                "./ancestor::*[@role='row' or self::tr or contains(@class, 'row') or contains(@class, 'table-row')][1]",
+            )
+        except WebDriverException:
+            continue
+
+        try:
+            row_id = row.id
+        except WebDriverException:
+            continue
+        if row_id in seen_ids:
+            continue
+        seen_ids.add(row_id)
+
+        title_target = find_clickable_title_in_row(row)
+        title_text = normalize_cell_text(find_row_title(row))
+        if title_target is not None and title_text not in excluded_titles:
+            matches.append((path, row, -1))
+
+    return matches
+
+
+def get_target_rows(driver: WebDriver, excluded_titles: set[str] | None = None) -> list[tuple[list[int], object, int]]:
+    matches: list[tuple[list[int], object, int]] = []
+    debug_lines: list[str] = []
+    excluded_titles = excluded_titles or set()
 
     for path in iter_frame_paths(driver):
         try:
             switch_to_frame_path(driver, path)
-            seen_ids: set[str] = set()
-            rows = []
-            for xpath in candidate_xpaths:
-                for element in driver.find_elements(By.XPATH, xpath):
-                    try:
-                        element_id = element.id
-                    except WebDriverException:
-                        continue
-                    if element_id not in seen_ids:
-                        seen_ids.add(element_id)
-                        rows.append(element)
-
-            for index, row in enumerate(rows):
-                try:
-                    text = row.text
-                except WebDriverException:
+            tables = driver.find_elements(By.TAG_NAME, "table")
+            for table_index, table in enumerate(tables):
+                headers = extract_table_headers(table)
+                if not headers:
                     continue
-                text = (text or "").strip()
-                if text:
-                    compact = " ".join(text.split())
-                    debug_lines.append(f"path={path} idx={index} text={compact[:500]}")
-                if any(marker in text for marker in stage_markers):
-                    matches.append((path, row))
+
+                title_index = find_column_index(headers, "标题")
+                stage_index = find_column_index(headers, "当前环节")
+                if title_index < 0 or stage_index < 0:
+                    continue
+
+                rows = table.find_elements(By.XPATH, ".//tbody/tr")
+                if not rows:
+                    rows = table.find_elements(By.XPATH, ".//tr[td]")
+
+                for row_index, row in enumerate(rows):
+                    cells = row.find_elements(By.XPATH, "./td")
+                    if not cells or max(title_index, stage_index) >= len(cells):
+                        continue
+
+                    row_text = normalize_cell_text(row.text)
+                    if row_text:
+                        debug_lines.append(
+                            f"path={path} table={table_index} row={row_index} text={row_text[:500]}"
+                        )
+
+                    stage_text = normalize_cell_text(cells[stage_index].text)
+                    title_text = normalize_cell_text(cells[title_index].text)
+                    if stage_text in TARGET_STAGES and title_text and title_text not in excluded_titles:
+                        matches.append((path, row, title_index))
+
+            if not matches:
+                generic_matches = get_target_rows_from_generic_layout(driver, path, excluded_titles)
+                for match in generic_matches:
+                    try:
+                        debug_lines.append(
+                            f"path={path} generic-row text={normalize_cell_text(match[1].text)[:500]}"
+                        )
+                    except WebDriverException:
+                        pass
+                matches.extend(generic_matches)
         except WebDriverException:
             continue
         finally:
@@ -369,22 +652,56 @@ def find_row_title(row) -> str:
     return "<未识别标题>"
 
 
-def open_row_detail(driver: WebDriver, frame_path: list[int], row) -> None:
+def open_row_detail(driver: WebDriver, frame_path: list[int], row, title_index: int) -> None:
     switch_to_frame_path(driver, frame_path)
     try:
+        cells = row.find_elements(By.XPATH, "./td")
+        if title_index < len(cells):
+            title_cell = cells[title_index]
+            exact_targets = title_cell.find_elements(
+                By.XPATH,
+                ".//*[contains(@class, 'item-title--click') or contains(@class, 'content-container') or contains(@class, 'link')]",
+            )
+            for target in exact_targets:
+                if normalize_cell_text(target.text):
+                    click_element(driver, target)
+                    return
+
+            links = title_cell.find_elements(By.TAG_NAME, "a")
+            for link in links:
+                if normalize_cell_text(link.text):
+                    click_element(driver, link)
+                    return
+            if normalize_cell_text(title_cell.text):
+                click_element(driver, title_cell)
+                return
+
+        if title_index < 0:
+            title_target = find_clickable_title_in_row(row)
+            if title_target is not None:
+                click_element(driver, title_target)
+                return
+
         links = row.find_elements(By.TAG_NAME, "a")
         for link in links:
-            if link.text.strip():
+            if normalize_cell_text(link.text):
                 click_element(driver, link)
                 return
-        cells = row.find_elements(By.TAG_NAME, "td")
         for cell in cells:
-            if cell.text.strip():
+            if normalize_cell_text(cell.text):
                 click_element(driver, cell)
                 return
     finally:
         driver.switch_to.default_content()
     raise RuntimeError("未找到可点击的待办标题。")
+
+
+def open_row_detail_and_switch(driver: WebDriver, frame_path: list[int], row, title_index: int) -> None:
+    old_handles = list(driver.window_handles)
+    open_row_detail(driver, frame_path, row, title_index)
+    if switch_to_new_window(driver, old_handles, timeout=WAIT_LONG):
+        return
+    raise RuntimeError("点击待办标题后未检测到新打开的详情标签页。")
 
 
 def click_text_like(driver: WebDriver, texts: list[str], label: str) -> None:
@@ -422,11 +739,260 @@ def click_text_like(driver: WebDriver, texts: list[str], label: str) -> None:
 
 
 def click_submit_button(driver: WebDriver) -> None:
-    click_text_like(driver, ["一键提交", "提交处理"], "一键提交")
+    deadline = time.time() + WAIT_LONG
+    toolbar_xpaths = [
+        "//*[contains(@class, 'toolbar')]",
+        "//*[contains(@class, 'tool-bar')]",
+        "//*[contains(@class, 'header')]",
+        "//*[contains(@class, 'nav')]",
+        "//*[contains(@class, 'action')]",
+        "//body",
+    ]
+    target_xpaths = [
+        ".//button[normalize-space(.)='一键提交']",
+        ".//a[normalize-space(.)='一键提交']",
+        ".//span[normalize-space(.)='一键提交']/ancestor::*[self::button or self::a or self::div][1]",
+        ".//*[contains(@class, 'btn') and normalize-space(.)='一键提交']",
+    ]
+
+    while time.time() < deadline:
+        for path in iter_frame_paths(driver):
+            try:
+                switch_to_frame_path(driver, path)
+                for toolbar_xpath in toolbar_xpaths:
+                    for container in driver.find_elements(By.XPATH, toolbar_xpath):
+                        if not container.is_displayed():
+                            continue
+                        for target_xpath in target_xpaths:
+                            for element in container.find_elements(By.XPATH, target_xpath):
+                                if element.is_displayed() and normalize_cell_text(element.text) == "一键提交":
+                                    click_element(driver, element)
+                                    driver.switch_to.default_content()
+                                    return
+            except WebDriverException:
+                continue
+            finally:
+                driver.switch_to.default_content()
+        time.sleep(1)
+
+    save_debug_snapshot(driver, "missing-一键提交")
+    raise RuntimeError('未在详情页导航栏中找到“一键提交”按钮，已在 debug 目录保存现场截图。')
+
+
+def cdp_click_dialog_submit(driver: WebDriver) -> tuple[bool, str]:
+    expression = r"""
+(() => {
+  const isVisible = (el) => {
+    if (!el) return false;
+    const doc = el.ownerDocument || document;
+    const view = doc.defaultView || window;
+    const style = view.getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const textOf = (el) => ((el?.innerText || el?.textContent || '').replace(/\s+/g, ' ').trim());
+
+  const rectOf = (el) => el ? el.getBoundingClientRect() : null;
+
+  const clickableOf = (el) => {
+    if (!el) return null;
+    return el.closest('button, a, [role="button"], .el-button, .el-link, .ant-btn') || el;
+  };
+
+  const clickEl = (el) => {
+    const clickable = clickableOf(el);
+    if (!clickable || !isVisible(clickable)) return false;
+    clickable.scrollIntoView({ block: 'center', inline: 'center' });
+    const rect = rectOf(clickable);
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    const centerX = Math.max(rect.left + 1, Math.min(rect.right - 1, rect.left + rect.width / 2));
+    const centerY = Math.max(rect.top + 1, Math.min(rect.bottom - 1, rect.top + rect.height / 2));
+    const doc = clickable.ownerDocument || document;
+    const view = doc.defaultView || window;
+    const topEl = doc.elementFromPoint(centerX, centerY);
+    const target = clickableOf(topEl) || clickable;
+    target.focus?.();
+    ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach((type) => {
+      const EventCtor = type.startsWith('pointer') ? (view.PointerEvent || view.MouseEvent) : view.MouseEvent;
+      target.dispatchEvent(new EventCtor(type, {
+        bubbles: true,
+        cancelable: true,
+        composed: true,
+        pointerId: 1,
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: centerX,
+        clientY: centerY,
+        view,
+      }));
+    });
+    if (typeof target.click === 'function') target.click();
+    return true;
+  };
+
+  const docEntries = [];
+  const collectDocs = (doc, depth = 0) => {
+    if (!doc || depth > 4) return;
+    docEntries.push(doc);
+    const frames = Array.from(doc.querySelectorAll('iframe, frame'));
+    for (const frame of frames) {
+      try {
+        if (frame.contentDocument) collectDocs(frame.contentDocument, depth + 1);
+      } catch (error) {
+        // Ignore cross-origin frames.
+      }
+    }
+  };
+  collectDocs(document);
+
+  const dialogEntries = [];
+  for (const doc of docEntries) {
+    const dialogs = Array.from(doc.querySelectorAll('.el-dialog, [role="dialog"], .dialog, .modal'))
+      .filter((el) => isVisible(el) && (textOf(el).includes('下一步操作') || textOf(el).includes('一键提交')));
+    if (dialogs.length) {
+      dialogEntries.push(...dialogs.map((el) => ({ el, doc })));
+    }
+  }
+
+  const dialog = (dialogEntries[0] || { el: document.body, doc: document });
+  const root = dialog.el;
+  const rootDoc = dialog.doc;
+  const rootRect = rectOf(root) || { left: 0, right: rootDoc.defaultView?.innerWidth || window.innerWidth };
+
+  const cardBodies = Array.from(root.querySelectorAll('.jdf-onekey-submit-config-dialog .jdf-card__body, .jdf-onekey-submit-config .jdf-card__body, .jdf-card__body'))
+    .filter((card) => isVisible(card));
+  const targetCard = cardBodies.find((card) => {
+    const cols = Array.from(card.querySelectorAll('.jdf-card-table__body > .jdf-card-table__cell'));
+    if (cols[2] && textOf(cols[2]) === '结束办理') return true;
+    return textOf(card).includes('结束办理');
+  });
+  if (targetCard) {
+    const targetButton = Array.from(targetCard.querySelectorAll('button.onekey-submit-button, .onekey-submit-button, button, [role="button"]'))
+      .map((el) => clickableOf(el))
+      .find((el) => !!el && isVisible(el) && textOf(el).includes('提交'));
+    if (targetButton && clickEl(targetButton)) {
+      return {
+        ok: true,
+        mode: 'card-body-onekey-submit',
+        cardCount: cardBodies.length,
+        cardText: textOf(targetCard).slice(0, 500),
+        buttonText: textOf(targetButton),
+      };
+    }
+    return {
+      ok: false,
+      reason: 'card-target-found-but-button-not-clickable',
+      cardCount: cardBodies.length,
+      cardText: textOf(targetCard).slice(0, 500),
+    };
+  }
+
+  const rowCandidates = Array.from(root.querySelectorAll('tbody tr, .el-table__row, tr'))
+    .filter((row) => isVisible(row) && textOf(row).includes('结束办理'));
+  const targetRows = rowCandidates
+    .map((row) => ({ row, rect: rectOf(row), text: textOf(row), doc: row.ownerDocument || rootDoc }))
+    .filter((item) => item.rect && item.rect.width > 0 && item.rect.height > 0)
+    .sort((a, b) => a.rect.top - b.rect.top);
+
+  if (!targetRows.length) {
+    return {
+      ok: false,
+      reason: 'target-row-not-found',
+      docCount: docEntries.length,
+      dialogCount: dialogEntries.length,
+      rowCount: rowCandidates.length,
+      dialogText: textOf(root).slice(0, 1200),
+    };
+  }
+
+  const target = targetRows[0];
+  const rowMidY = target.rect.top + target.rect.height / 2;
+  const rightBoundary = Math.max(target.rect.right, rootRect.left + (rootRect.right - rootRect.left) * 0.72);
+
+  const rawCandidates = [];
+  for (const doc of docEntries) {
+    for (const node of Array.from(doc.querySelectorAll('button, a, [role="button"], .el-button, .el-link, span, div'))) {
+      const clickable = clickableOf(node);
+      if (!clickable || rawCandidates.includes(clickable)) continue;
+      rawCandidates.push(clickable);
+    }
+  }
+
+  const submitCandidates = rawCandidates
+    .filter((el) => {
+      if (!isVisible(el)) return false;
+      const text = textOf(el);
+      if (!text.includes('提交')) return false;
+      const rect = rectOf(el);
+      if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+      const verticallyNear = Math.abs((rect.top + rect.height / 2) - rowMidY) <= Math.max(target.rect.height * 1.2, 60);
+      const horizontallyRight = rect.left >= rightBoundary || rect.right >= rootRect.right - 120;
+      return verticallyNear || horizontallyRight;
+    })
+    .map((el) => {
+      const rect = rectOf(el);
+      const centerY = rect.top + rect.height / 2;
+      const score = Math.abs(centerY - rowMidY) + (rect.left < rightBoundary ? 10000 : 0);
+      return { el, rect, score, text: textOf(el), owner: el.ownerDocument === rootDoc ? 'root' : 'frame' };
+    })
+    .sort((a, b) => a.score - b.score);
+
+  if (submitCandidates[0] && clickEl(submitCandidates[0].el)) {
+    return {
+      ok: true,
+      mode: 'right-side-nearest-submit',
+      rowText: target.text,
+      buttonText: submitCandidates[0].text,
+      buttonOwner: submitCandidates[0].owner,
+      score: submitCandidates[0].score,
+      buttonLeft: submitCandidates[0].rect.left,
+      buttonTop: submitCandidates[0].rect.top,
+    };
+  }
+
+  return {
+    ok: false,
+    reason: 'target-row-found-but-submit-not-clickable',
+    rowText: target.text,
+    docCount: docEntries.length,
+    dialogCount: dialogEntries.length,
+    submitCount: submitCandidates.length,
+    dialogText: textOf(root).slice(0, 1200),
+  };
+})()
+"""
+    try:
+        result = driver.execute_cdp_cmd(
+            "Runtime.evaluate",
+            {
+                "expression": expression,
+                "returnByValue": True,
+                "awaitPromise": True,
+            },
+        )
+        value = (result or {}).get("result", {}).get("value", {})
+        if isinstance(value, dict):
+            return bool(value.get("ok")), str(value)
+        return False, str(value)
+    except WebDriverException as exc:
+        return False, f"cdp-error: {exc}"
 
 
 def confirm_submit(driver: WebDriver) -> None:
-    click_text_like(driver, ["提交", "确定"], "提交")
+    deadline = time.time() + WAIT_LONG
+
+    while time.time() < deadline:
+        ok, detail = cdp_click_dialog_submit(driver)
+        append_debug_text("dialog-submit-attempt", detail)
+        if ok:
+            return
+        time.sleep(1)
+
+    save_debug_snapshot(driver, "missing-dialog-submit")
+    raise RuntimeError('未在弹窗中找到“下一步操作”为“结束办理”的提交按钮，已在 debug 目录保存现场截图。')
 
 
 def click_pending_more(driver: WebDriver) -> None:
@@ -499,17 +1065,77 @@ def switch_to_new_window(driver: WebDriver, old_handles: list[str], timeout: int
     return False
 
 
+def switch_to_existing_todo_tab(driver: WebDriver) -> bool:
+    handles = list(driver.window_handles)
+    for handle in handles:
+        try:
+            driver.switch_to.window(handle)
+            current_url = (driver.current_url or "").lower()
+            current_title = (driver.title or "").lower()
+            if "todo.hq.cmcc" in current_url or "待办" in current_title or "待办工作" in current_title:
+                return True
+        except WebDriverException:
+            continue
+    return False
+
+
+def is_login_page(driver: WebDriver) -> bool:
+    try:
+        current_url = (driver.current_url or "").lower()
+    except WebDriverException:
+        return False
+    return "/portal-new/login" in current_url
+
+
+def wait_for_login_completion(driver: WebDriver, timeout: int = 600) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if switch_to_existing_todo_tab(driver):
+                return True
+            if not is_login_page(driver):
+                return True
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    return False
+
+
+def wait_for_existing_todo_tab(driver: WebDriver, timeout: int = 300) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if switch_to_existing_todo_tab(driver):
+            return True
+        time.sleep(1)
+    return False
+
+
 def wait_return_to_list(driver: WebDriver) -> None:
     deadline = time.time() + WAIT_LONG
     last_error = ""
+    try:
+        list_handle = driver.window_handles[0]
+    except Exception:  # noqa: BLE001
+        list_handle = None
+
     while time.time() < deadline:
         try:
+            handles = list(driver.window_handles)
+            if list_handle and list_handle in handles:
+                driver.switch_to.window(list_handle)
+            elif handles:
+                driver.switch_to.window(handles[0])
             wait_for_todo_table(driver, allow_goto=False)
             return
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             time.sleep(1)
     try:
+        handles = list(driver.window_handles)
+        if list_handle and list_handle in handles:
+            driver.switch_to.window(list_handle)
+        elif handles:
+            driver.switch_to.window(handles[0])
         wait_for_todo_table(driver, allow_goto=True)
         return
     except Exception as exc:  # noqa: BLE001
@@ -517,8 +1143,18 @@ def wait_return_to_list(driver: WebDriver) -> None:
     raise RuntimeError(f"提交后未返回待办列表页: {last_error or '未知错误'}")
 
 
-def process_one(driver: WebDriver) -> tuple[bool, str]:
-    rows = get_target_rows(driver)
+def refresh_todo_list(driver: WebDriver) -> None:
+    logging.info("已返回待办页，正在刷新列表。")
+    try:
+        driver.refresh()
+    except WebDriverException:
+        driver.get(TODO_URL)
+    wait_for_todo_table(driver, allow_goto=False)
+    time.sleep(2)
+
+
+def process_one(driver: WebDriver, excluded_titles: set[str] | None = None) -> tuple[bool, str]:
+    rows = get_target_rows(driver, excluded_titles)
     if not rows:
         append_debug_text(
             "page-meta",
@@ -527,10 +1163,10 @@ def process_one(driver: WebDriver) -> tuple[bool, str]:
         save_debug_snapshot(driver, "no-target-rows")
         return False, '当前页没有可处理的“部门落实”单据。'
 
-    frame_path, row = rows[0]
+    frame_path, row, title_index = rows[0]
     title = find_row_title(row)
     logging.info("开始处理: %s", title)
-    open_row_detail(driver, frame_path, row)
+    open_row_detail_and_switch(driver, frame_path, row, title_index)
     time.sleep(2)
     save_debug_snapshot(driver, "detail-page")
     click_submit_button(driver)
@@ -538,54 +1174,97 @@ def process_one(driver: WebDriver) -> tuple[bool, str]:
     save_debug_snapshot(driver, "after-click-submit")
     confirm_submit(driver)
     wait_return_to_list(driver)
+    refresh_todo_list(driver)
     logging.info("处理完成: %s", title)
     return True, title
 
 
+def collect_visible_target_titles(driver: WebDriver) -> set[str]:
+    titles: set[str] = set()
+    for path, row, _title_index in get_target_rows(driver):
+        try:
+            title = normalize_cell_text(find_row_title(row))
+        except WebDriverException:
+            continue
+        if title:
+            titles.add(title)
+    return titles
+
+
 def main() -> int:
     args = parse_args()
-    setup_logging(Path(__file__).resolve().parent / "logs" / "oa_auto_approve.log")
+    setup_logging(app_base_dir() / "logs" / "oa_auto_approve.log")
 
     driver = None
     try:
-        user_data_dir = resolve_user_data_dir(args.browser, args.user_data_dir)
-        if not user_data_dir.exists():
-            raise RuntimeError(f"未找到浏览器用户数据目录: {user_data_dir}")
+        if args.attach_debugger:
+            logging.info("正在附着到已打开的浏览器调试端口 %s。", args.attach_debugger)
+            try:
+                driver = attach_to_debugger(browser=args.browser, debugger_address=args.attach_debugger)
+            except Exception:
+                logging.info("未检测到可附着的浏览器，正在自动启动 %s。", args.browser)
+                start_browser_for_attach(args.browser, args.attach_debugger)
+                driver = attach_to_debugger(browser=args.browser, debugger_address=args.attach_debugger)
+            print("请在打开的浏览器中手工登录 OA；登录完成后程序会自动进入待办页。")
+            if not wait_for_login_completion(driver):
+                raise RuntimeError("等待登录完成超时，请确认你已成功登录 OA。")
+            logging.info("已检测到登录完成，准备进入待办页。当前页面信息：%s", current_page_meta(driver).replace("\n", " | "))
+            if wait_for_existing_todo_tab(driver, timeout=WAIT_TODO_TAB_GRACE):
+                logging.info("检测到你已手工打开待办页，准备直接接管。")
+                wait_for_todo_table(driver, allow_goto=False)
+            else:
+                logging.info("未检测到手工打开的待办页，程序将自动进入待办页。")
+                wait_for_todo_table(driver, allow_goto=True)
+        else:
+            user_data_dir = resolve_user_data_dir(args.browser, args.user_data_dir)
+            if not user_data_dir.exists():
+                raise RuntimeError(f"未找到浏览器用户数据目录: {user_data_dir}")
 
-        if not args.keep_browser and args.user_data_dir:
-            logging.info("正在关闭现有 %s 进程，确保可以复用登录配置。", args.browser)
-            force_close_browser_processes(args.browser)
-        elif not args.user_data_dir:
-            logging.info("使用程序独立的 %s 配置目录启动浏览器。", args.browser)
+            if not args.keep_browser and args.user_data_dir:
+                logging.info("正在关闭现有 %s 进程，确保可以复用登录配置。", args.browser)
+                force_close_browser_processes(args.browser)
+            elif not args.user_data_dir:
+                logging.info("使用程序独立的 %s 配置目录启动浏览器。", args.browser)
 
-        driver = build_driver(
-            browser=args.browser,
-            headless=args.headless,
-            user_data_dir=user_data_dir,
-            profile_name=args.profile,
-        )
+            driver = build_driver(
+                browser=args.browser,
+                headless=args.headless,
+                user_data_dir=user_data_dir,
+                profile_name=args.profile,
+            )
 
-        driver.get(LOGIN_URL)
-        logging.info("已打开 OA 登录页，请先手工完成登录。")
-        if args.manual_login:
-            input("登录完成后按回车结束...")
-            return 0
-        input("请在打开的浏览器窗口中手工登录 OA，登录完成后按回车继续...")
-
-        click_pending_more(driver)
-        wait_for_todo_table(driver, allow_goto=False)
+            driver.get(LOGIN_URL)
+            logging.info("已打开 OA 登录页，请先手工完成登录。")
+            if args.manual_login:
+                input("登录完成后按回车结束...")
+                return 0
+            input("请在打开的浏览器窗口中手工登录 OA，登录完成后按回车继续...")
+            driver.get(TODO_URL)
+            wait_for_todo_table(driver, allow_goto=False)
         logging.info("待办列表已加载，开始自动审批。")
 
         processed = 0
+        excluded_titles: set[str] = set()
         while True:
             if args.limit and processed >= args.limit:
                 logging.info("达到处理上限 %s，程序结束。", args.limit)
                 break
-            has_item, message = process_one(driver)
+            try:
+                visible_titles = collect_visible_target_titles(driver)
+                excluded_titles.intersection_update(visible_titles)
+            except Exception:  # noqa: BLE001
+                pass
+            has_item, message = process_one(driver, excluded_titles)
             if not has_item:
-                logging.info(message)
-                break
+                logging.info("%s %s 秒后继续监控。", message, WAIT_IDLE_RETRY)
+                time.sleep(WAIT_IDLE_RETRY)
+                try:
+                    wait_return_to_list(driver)
+                except Exception:  # noqa: BLE001
+                    wait_for_todo_table(driver, allow_goto=True)
+                continue
             processed += 1
+            excluded_titles.add(message)
 
         logging.info("本次共处理 %s 条。", processed)
         return 0
