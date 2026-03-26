@@ -3,6 +3,15 @@ phone_number.txt
 phone_number.txt.bak
 .approve_bot.lock
 .approve_devtools.lock
+selenium/approve_orders.log
+selenium/phone_number.txt
+selenium/.approve_bot.lock
+devtools/approve_orders.log
+devtools/phone_number.txt
+devtools/.approve_devtools.lock
+playwright/approve_orders.log
+playwright/phone_number.txt
+playwright/.approve_playwright.lock
 
 chrome-profile/
 edge-profile/
@@ -13,6 +22,15 @@ devtools-chrome-profiles/
 devtools-edge-profile/
 devtools-edge-profiles/
 .drivers/
+selenium/chrome-profile/
+selenium/edge-profile/
+selenium/.drivers/
+devtools/devtools-chrome-profile/
+devtools/devtools-chrome-profiles/
+devtools/devtools-edge-profile/
+devtools/devtools-edge-profiles/
+playwright/playwright-chrome-profile/
+playwright/playwright-debug/
 
 build/
 dist/
