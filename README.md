@@ -5,7 +5,7 @@
 - 使用 Chrome 138 的 DevTools 附着模式运行。
 - 登录页固定为 `http://oa.hq.cmcc/portal-new/login`，登录由人工完成。
 - 登录后接管待办页 `http://todo.hq.cmcc/backlog/cmit/web/index/todo?menu=DB&group=province&company=GD&role=ALL`。
-- 只处理“当前环节”精确等于 `部门落实` 或 `主办部门内部落实` 的公文。
+- 只处理“当前环节”精确等于 `部门落实`、`主办部门内部落实` 或 `阅知部门内部落实` 的公文。
 - 点击标题后等待新标签页打开详情页。
 - 在详情页顶部精确点击 `一键提交`。
 - 在弹窗中找到 `下一步操作 = 结束办理` 的卡片，并点击该卡片里的 `提交`。

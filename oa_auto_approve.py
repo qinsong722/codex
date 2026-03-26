@@ -27,7 +27,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 LOGIN_URL = "http://oa.hq.cmcc/portal-new/login"
 TODO_URL = "http://todo.hq.cmcc/backlog/cmit/web/index/todo?menu=DB&group=province&company=GD&role=ALL"
-TARGET_STAGES = ("部门落实", "主办部门内部落实")
+TARGET_STAGES = ("部门落实", "主办部门内部落实", "阅知部门内部落实")
 DEFAULT_HEADLESS = False
 WAIT_SHORT = 5
 WAIT_MEDIUM = 10
@@ -92,7 +92,7 @@ def pause_before_exit(message: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='自动处理 OA 待办列表中“当前环节”为“部门落实”或“主办部门内部落实”的单据。'
+        description='自动处理 OA 待办列表中“当前环节”为“部门落实”“主办部门内部落实”或“阅知部门内部落实”的单据。'
     )
     parser.add_argument(
         "--browser",
@@ -525,7 +525,8 @@ def find_clickable_title_in_row(row):
             By.XPATH,
             ".//*[self::span or self::div][normalize-space(.)!='' "
             "and not(contains(normalize-space(.), '部门落实')) "
-            "and not(contains(normalize-space(.), '主办部门内部落实'))]",
+            "and not(contains(normalize-space(.), '主办部门内部落实')) "
+            "and not(contains(normalize-space(.), '阅知部门内部落实'))]",
         )
         for candidate in title_candidates:
             if normalize_cell_text(candidate.text):
@@ -1065,18 +1066,83 @@ def switch_to_new_window(driver: WebDriver, old_handles: list[str], timeout: int
     return False
 
 
-def switch_to_existing_todo_tab(driver: WebDriver) -> bool:
-    handles = list(driver.window_handles)
+def score_todo_tab(driver: WebDriver, handle: str) -> int:
+    try:
+        driver.switch_to.window(handle)
+        current_url = (driver.current_url or "").lower()
+        current_title = normalize_cell_text(driver.title).lower()
+        current_text = normalize_cell_text(body_text(driver))[:1000].lower()
+    except WebDriverException:
+        return -1
+
+    score = 0
+    todo_url = TODO_URL.lower()
+    if current_url == todo_url:
+        score += 200
+    elif current_url.startswith(todo_url):
+        score += 180
+    elif "todo.hq.cmcc/backlog/cmit/web/index/todo" in current_url:
+        score += 160
+    elif "todo.hq.cmcc" in current_url:
+        score += 120
+
+    if current_title == "待办工作":
+        score += 120
+    elif "待办工作" in current_title:
+        score += 100
+    elif "待办" in current_title:
+        score += 30
+
+    if "当前环节" in current_text and "标题" in current_text:
+        score += 20
+    if "公文待办" in current_text or "每页" in current_text:
+        score += 20
+
+    return score
+
+
+def find_best_todo_tab_handle(driver: WebDriver, preferred_handle: str | None = None) -> str | None:
+    try:
+        handles = list(driver.window_handles)
+    except WebDriverException:
+        return None
+    if not handles:
+        return None
+
+    best_handle = None
+    best_score = -1
     for handle in handles:
-        try:
-            driver.switch_to.window(handle)
-            current_url = (driver.current_url or "").lower()
-            current_title = (driver.title or "").lower()
-            if "todo.hq.cmcc" in current_url or "待办" in current_title or "待办工作" in current_title:
-                return True
-        except WebDriverException:
+        score = score_todo_tab(driver, handle)
+        if score < 0:
             continue
-    return False
+        if preferred_handle and handle == preferred_handle and score >= 120:
+            score += 50
+        if score > best_score:
+            best_score = score
+            best_handle = handle
+
+    if best_score < 120:
+        return None
+    return best_handle
+
+
+def ensure_todo_tab(driver: WebDriver, preferred_handle: str | None = None) -> str:
+    handle = find_best_todo_tab_handle(driver, preferred_handle)
+    if not handle:
+        raise RuntimeError("未找到可用的“待办工作”标签页。")
+    driver.switch_to.window(handle)
+    return handle
+
+
+def switch_to_existing_todo_tab(driver: WebDriver, preferred_handle: str | None = None) -> bool:
+    handle = find_best_todo_tab_handle(driver, preferred_handle)
+    if not handle:
+        return False
+    try:
+        driver.switch_to.window(handle)
+    except WebDriverException:
+        return False
+    return True
 
 
 def is_login_page(driver: WebDriver) -> bool:
@@ -1087,11 +1153,11 @@ def is_login_page(driver: WebDriver) -> bool:
     return "/portal-new/login" in current_url
 
 
-def wait_for_login_completion(driver: WebDriver, timeout: int = 600) -> bool:
+def wait_for_login_completion(driver: WebDriver, timeout: int = 600, preferred_todo_handle: str | None = None) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            if switch_to_existing_todo_tab(driver):
+            if switch_to_existing_todo_tab(driver, preferred_todo_handle):
                 return True
             if not is_login_page(driver):
                 return True
@@ -1101,49 +1167,38 @@ def wait_for_login_completion(driver: WebDriver, timeout: int = 600) -> bool:
     return False
 
 
-def wait_for_existing_todo_tab(driver: WebDriver, timeout: int = 300) -> bool:
+def wait_for_existing_todo_tab(driver: WebDriver, timeout: int = 300, preferred_todo_handle: str | None = None) -> bool:
     deadline = time.time() + timeout
     while time.time() < deadline:
-        if switch_to_existing_todo_tab(driver):
+        if switch_to_existing_todo_tab(driver, preferred_todo_handle):
             return True
         time.sleep(1)
     return False
 
 
-def wait_return_to_list(driver: WebDriver) -> None:
+def wait_return_to_list(driver: WebDriver, todo_handle: str | None = None) -> str:
     deadline = time.time() + WAIT_LONG
     last_error = ""
-    try:
-        list_handle = driver.window_handles[0]
-    except Exception:  # noqa: BLE001
-        list_handle = None
 
     while time.time() < deadline:
         try:
-            handles = list(driver.window_handles)
-            if list_handle and list_handle in handles:
-                driver.switch_to.window(list_handle)
-            elif handles:
-                driver.switch_to.window(handles[0])
+            active_handle = ensure_todo_tab(driver, todo_handle)
             wait_for_todo_table(driver, allow_goto=False)
-            return
+            return active_handle
         except Exception as exc:  # noqa: BLE001
             last_error = str(exc)
             time.sleep(1)
     try:
-        handles = list(driver.window_handles)
-        if list_handle and list_handle in handles:
-            driver.switch_to.window(list_handle)
-        elif handles:
-            driver.switch_to.window(handles[0])
+        active_handle = ensure_todo_tab(driver, todo_handle)
         wait_for_todo_table(driver, allow_goto=True)
-        return
+        return active_handle
     except Exception as exc:  # noqa: BLE001
         last_error = str(exc)
     raise RuntimeError(f"提交后未返回待办列表页: {last_error or '未知错误'}")
 
 
-def refresh_todo_list(driver: WebDriver) -> None:
+def refresh_todo_list(driver: WebDriver, todo_handle: str | None = None) -> str:
+    active_handle = ensure_todo_tab(driver, todo_handle)
     logging.info("已返回待办页，正在刷新列表。")
     try:
         driver.refresh()
@@ -1151,9 +1206,15 @@ def refresh_todo_list(driver: WebDriver) -> None:
         driver.get(TODO_URL)
     wait_for_todo_table(driver, allow_goto=False)
     time.sleep(2)
+    return ensure_todo_tab(driver, active_handle)
 
 
-def process_one(driver: WebDriver, excluded_titles: set[str] | None = None) -> tuple[bool, str]:
+def process_one(
+    driver: WebDriver,
+    excluded_titles: set[str] | None = None,
+    todo_handle: str | None = None,
+) -> tuple[bool, str, str | None]:
+    active_todo_handle = ensure_todo_tab(driver, todo_handle)
     rows = get_target_rows(driver, excluded_titles)
     if not rows:
         append_debug_text(
@@ -1161,7 +1222,7 @@ def process_one(driver: WebDriver, excluded_titles: set[str] | None = None) -> t
             f"title={driver.title}\nurl={driver.current_url}\nhandles={driver.window_handles}",
         )
         save_debug_snapshot(driver, "no-target-rows")
-        return False, '当前页没有可处理的“部门落实”单据。'
+        return False, '当前页没有可处理的目标单据。', active_todo_handle
 
     frame_path, row, title_index = rows[0]
     title = find_row_title(row)
@@ -1173,13 +1234,14 @@ def process_one(driver: WebDriver, excluded_titles: set[str] | None = None) -> t
     time.sleep(1)
     save_debug_snapshot(driver, "after-click-submit")
     confirm_submit(driver)
-    wait_return_to_list(driver)
-    refresh_todo_list(driver)
+    active_todo_handle = wait_return_to_list(driver, active_todo_handle)
+    active_todo_handle = refresh_todo_list(driver, active_todo_handle)
     logging.info("处理完成: %s", title)
-    return True, title
+    return True, title, active_todo_handle
 
 
-def collect_visible_target_titles(driver: WebDriver) -> set[str]:
+def collect_visible_target_titles(driver: WebDriver, todo_handle: str | None = None) -> tuple[set[str], str]:
+    active_todo_handle = ensure_todo_tab(driver, todo_handle)
     titles: set[str] = set()
     for path, row, _title_index in get_target_rows(driver):
         try:
@@ -1188,7 +1250,7 @@ def collect_visible_target_titles(driver: WebDriver) -> set[str]:
             continue
         if title:
             titles.add(title)
-    return titles
+    return titles, active_todo_handle
 
 
 def main() -> int:
@@ -1196,6 +1258,7 @@ def main() -> int:
     setup_logging(app_base_dir() / "logs" / "oa_auto_approve.log")
 
     driver = None
+    todo_handle: str | None = None
     try:
         if args.attach_debugger:
             logging.info("正在附着到已打开的浏览器调试端口 %s。", args.attach_debugger)
@@ -1206,15 +1269,17 @@ def main() -> int:
                 start_browser_for_attach(args.browser, args.attach_debugger)
                 driver = attach_to_debugger(browser=args.browser, debugger_address=args.attach_debugger)
             print("请在打开的浏览器中手工登录 OA；登录完成后程序会自动进入待办页。")
-            if not wait_for_login_completion(driver):
+            if not wait_for_login_completion(driver, preferred_todo_handle=todo_handle):
                 raise RuntimeError("等待登录完成超时，请确认你已成功登录 OA。")
             logging.info("已检测到登录完成，准备进入待办页。当前页面信息：%s", current_page_meta(driver).replace("\n", " | "))
-            if wait_for_existing_todo_tab(driver, timeout=WAIT_TODO_TAB_GRACE):
+            if wait_for_existing_todo_tab(driver, timeout=WAIT_TODO_TAB_GRACE, preferred_todo_handle=todo_handle):
                 logging.info("检测到你已手工打开待办页，准备直接接管。")
                 wait_for_todo_table(driver, allow_goto=False)
+                todo_handle = ensure_todo_tab(driver, todo_handle)
             else:
                 logging.info("未检测到手工打开的待办页，程序将自动进入待办页。")
                 wait_for_todo_table(driver, allow_goto=True)
+                todo_handle = ensure_todo_tab(driver, todo_handle)
         else:
             user_data_dir = resolve_user_data_dir(args.browser, args.user_data_dir)
             if not user_data_dir.exists():
@@ -1241,6 +1306,7 @@ def main() -> int:
             input("请在打开的浏览器窗口中手工登录 OA，登录完成后按回车继续...")
             driver.get(TODO_URL)
             wait_for_todo_table(driver, allow_goto=False)
+            todo_handle = ensure_todo_tab(driver, todo_handle)
         logging.info("待办列表已加载，开始自动审批。")
 
         processed = 0
@@ -1250,18 +1316,19 @@ def main() -> int:
                 logging.info("达到处理上限 %s，程序结束。", args.limit)
                 break
             try:
-                visible_titles = collect_visible_target_titles(driver)
+                visible_titles, todo_handle = collect_visible_target_titles(driver, todo_handle)
                 excluded_titles.intersection_update(visible_titles)
             except Exception:  # noqa: BLE001
                 pass
-            has_item, message = process_one(driver, excluded_titles)
+            has_item, message, todo_handle = process_one(driver, excluded_titles, todo_handle)
             if not has_item:
                 logging.info("%s %s 秒后继续监控。", message, WAIT_IDLE_RETRY)
                 time.sleep(WAIT_IDLE_RETRY)
                 try:
-                    wait_return_to_list(driver)
+                    todo_handle = wait_return_to_list(driver, todo_handle)
                 except Exception:  # noqa: BLE001
                     wait_for_todo_table(driver, allow_goto=True)
+                    todo_handle = ensure_todo_tab(driver, todo_handle)
                 continue
             processed += 1
             excluded_titles.add(message)
