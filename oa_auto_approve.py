@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import re
 import socket
 import subprocess
 import sys
@@ -27,7 +28,18 @@ from selenium.webdriver.support.ui import WebDriverWait
 
 LOGIN_URL = "http://oa.hq.cmcc/portal-new/login"
 TODO_URL = "http://todo.hq.cmcc/backlog/cmit/web/index/todo?menu=DB&group=province&company=GD&role=ALL"
-TARGET_STAGES = ("部门落实", "主办部门内部落实", "阅知部门内部落实")
+TARGET_STAGES = ("部门落实", "主办部门内部落实")
+TARGET_STAGE = "相关部门会签"
+TARGET_PREVIOUS_SUBMITTER = "张喆"
+TARGET_APPROVAL_PERSON = "张喆"
+TARGET_APPROVAL_OPINIONS = {"请会签", "请李总会签"}
+TARGET_ROUTE = "部门内部征求意见"
+TARGET_ASSIGNEE = "卢志超"
+TARGET_COMMENT = "请确认。"
+TEXT_VARIANTS = {
+    "其他": ["其他", "其它"],
+    "其它": ["其它", "其他"],
+}
 DEFAULT_HEADLESS = False
 WAIT_SHORT = 5
 WAIT_MEDIUM = 10
@@ -36,6 +48,7 @@ WAIT_IDLE_RETRY = 15
 WAIT_TODO_LOAD = 60
 WAIT_TODO_TAB_GRACE = 20
 DEFAULT_DEBUGGER_ADDRESS = "127.0.0.1:9222"
+PREFERRED_CHROME_MAJOR = 146
 
 BROWSER_CONFIGS = {
     "chrome": {
@@ -92,7 +105,7 @@ def pause_before_exit(message: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description='自动处理 OA 待办列表中“当前环节”为“部门落实”“主办部门内部落实”或“阅知部门内部落实”的单据。'
+        description='自动处理 OA 待办列表中“相关部门会签”且上一环节提交人为“张喆”的单据。'
     )
     parser.add_argument(
         "--browser",
@@ -142,6 +155,35 @@ def parse_args() -> argparse.Namespace:
 
 def get_browser_config(browser: str) -> dict:
     return BROWSER_CONFIGS[browser]
+
+
+def get_windows_exe_major_version(executable: Path) -> int | None:
+    if not executable.exists():
+        return None
+    try:
+        command = [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            f"(Get-Item '{executable}').VersionInfo.ProductVersion",
+        ]
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=10,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    version_text = (completed.stdout or "").strip()
+    if not version_text:
+        return None
+    match = re.match(r"(\d+)", version_text)
+    if not match:
+        return None
+    return int(match.group(1))
 
 
 def force_close_browser_processes(browser: str) -> None:
@@ -207,17 +249,27 @@ def resolve_user_data_dir(browser: str, cli_value: str) -> Path:
 
 
 def find_browser_exe(browser: str) -> Path:
-    for candidate in get_browser_config(browser)["executables"]:
-        if candidate.exists():
-            return candidate
+    candidates = [candidate for candidate in get_browser_config(browser)["executables"] if candidate.exists()]
+    if browser == "chrome":
+        preferred = [
+            candidate
+            for candidate in candidates
+            if get_windows_exe_major_version(candidate) == PREFERRED_CHROME_MAJOR
+        ]
+        if preferred:
+            return preferred[0]
+    if candidates:
+        return candidates[0]
     raise FileNotFoundError(f"未找到 {browser} 安装路径。")
 
 
 def find_chromedriver() -> Path:
     candidates = [
+        resource_path("drivers/chromedriver-146/chromedriver.exe"),
         resource_path("drivers/chromedriver-138/chromedriver.exe"),
         resource_path("drivers/chromedriver.exe"),
         resource_path("drivers/chromedriver-win64/chromedriver.exe"),
+        Path(__file__).resolve().parent / "drivers" / "chromedriver-unpacked-146" / "chromedriver-win64" / "chromedriver.exe",
         Path(__file__).resolve().parent / "drivers" / "chromedriver-unpacked-138" / "chromedriver-win64" / "chromedriver.exe",
         Path(__file__).resolve().parent / "drivers" / "chromedriver.exe",
         Path(__file__).resolve().parent / "drivers" / "chromedriver-win64" / "chromedriver.exe",
@@ -486,7 +538,7 @@ def find_column_index(headers: list[str], target: str) -> int:
 
 
 def stage_xpath_predicate() -> str:
-    return " or ".join([f"normalize-space(.)='{stage}'" for stage in TARGET_STAGES])
+    return f"normalize-space(.)='{TARGET_STAGE}'"
 
 
 def find_clickable_title_in_row(row):
@@ -525,8 +577,7 @@ def find_clickable_title_in_row(row):
             By.XPATH,
             ".//*[self::span or self::div][normalize-space(.)!='' "
             "and not(contains(normalize-space(.), '部门落实')) "
-            "and not(contains(normalize-space(.), '主办部门内部落实')) "
-            "and not(contains(normalize-space(.), '阅知部门内部落实'))]",
+            "and not(contains(normalize-space(.), '主办部门内部落实'))]",
         )
         for candidate in title_candidates:
             if normalize_cell_text(candidate.text):
@@ -1222,7 +1273,7 @@ def process_one(
             f"title={driver.title}\nurl={driver.current_url}\nhandles={driver.window_handles}",
         )
         save_debug_snapshot(driver, "no-target-rows")
-        return False, '当前页没有可处理的目标单据。', active_todo_handle
+        return False, '当前页没有可处理的“部门落实”单据。', active_todo_handle
 
     frame_path, row, title_index = rows[0]
     title = find_row_title(row)
@@ -1251,6 +1302,664 @@ def collect_visible_target_titles(driver: WebDriver, todo_handle: str | None = N
         if title:
             titles.add(title)
     return titles, active_todo_handle
+
+
+def stage_xpath_predicate() -> str:
+    return f"normalize-space(.)='{TARGET_STAGE}'"
+
+
+def get_target_rows_from_generic_layout(
+    driver: WebDriver,
+    path: list[int],
+    excluded_titles: set[str] | None = None,
+) -> list[tuple[list[int], object, int]]:
+    matches: list[tuple[list[int], object, int]] = []
+    excluded_titles = excluded_titles or set()
+    stage_elements = driver.find_elements(
+        By.XPATH,
+        "//*[self::td or self::div or self::span][" + stage_xpath_predicate() + "]",
+    )
+
+    seen_ids: set[str] = set()
+    for stage_element in stage_elements:
+        try:
+            row = stage_element.find_element(
+                By.XPATH,
+                "./ancestor::*[@role='row' or self::tr or contains(@class, 'row') or contains(@class, 'table-row')][1]",
+            )
+        except WebDriverException:
+            continue
+
+        try:
+            row_id = row.id
+        except WebDriverException:
+            continue
+        if row_id in seen_ids:
+            continue
+        seen_ids.add(row_id)
+
+        title_target = find_clickable_title_in_row(row)
+        title_text = normalize_cell_text(find_row_title(row))
+        row_text = normalize_cell_text(row.text)
+        if (
+            title_target is not None
+            and title_text not in excluded_titles
+            and TARGET_STAGE in row_text
+            and TARGET_PREVIOUS_SUBMITTER in row_text
+        ):
+            matches.append((path, row, -1))
+
+    return matches
+
+
+def get_target_rows(driver: WebDriver, excluded_titles: set[str] | None = None) -> list[tuple[list[int], object, int]]:
+    matches: list[tuple[list[int], object, int]] = []
+    debug_lines: list[str] = []
+    excluded_titles = excluded_titles or set()
+
+    for path in iter_frame_paths(driver):
+        try:
+            switch_to_frame_path(driver, path)
+            tables = driver.find_elements(By.TAG_NAME, "table")
+            for table_index, table in enumerate(tables):
+                headers = extract_table_headers(table)
+                if not headers:
+                    continue
+
+                title_index = find_column_index(headers, "标题")
+                stage_index = find_column_index(headers, "当前环节")
+                previous_submitter_index = find_column_index(headers, "上一环节提交人")
+                if title_index < 0 or stage_index < 0 or previous_submitter_index < 0:
+                    continue
+
+                rows = table.find_elements(By.XPATH, ".//tbody/tr")
+                if not rows:
+                    rows = table.find_elements(By.XPATH, ".//tr[td]")
+
+                for row_index, row in enumerate(rows):
+                    cells = row.find_elements(By.XPATH, "./td")
+                    if not cells or max(title_index, stage_index, previous_submitter_index) >= len(cells):
+                        continue
+
+                    row_text = normalize_cell_text(row.text)
+                    if row_text:
+                        debug_lines.append(
+                            f"path={path} table={table_index} row={row_index} text={row_text[:500]}"
+                        )
+
+                    stage_text = normalize_cell_text(cells[stage_index].text)
+                    previous_submitter_text = normalize_cell_text(cells[previous_submitter_index].text)
+                    title_text = normalize_cell_text(cells[title_index].text)
+                    if (
+                        stage_text == TARGET_STAGE
+                        and previous_submitter_text == TARGET_PREVIOUS_SUBMITTER
+                        and title_text
+                        and title_text not in excluded_titles
+                    ):
+                        matches.append((path, row, title_index))
+
+            if not matches:
+                generic_matches = get_target_rows_from_generic_layout(driver, path, excluded_titles)
+                for match in generic_matches:
+                    try:
+                        debug_lines.append(
+                            f"path={path} generic-row text={normalize_cell_text(match[1].text)[:500]}"
+                        )
+                    except WebDriverException:
+                        pass
+                matches.extend(generic_matches)
+        except WebDriverException:
+            continue
+        finally:
+            driver.switch_to.default_content()
+    if debug_lines:
+        append_debug_text("row-scan", "\n".join(debug_lines[:400]))
+    return matches
+
+
+def click_visible_text(driver: WebDriver, text: str, label: str, exact: bool = True) -> None:
+    deadline = time.time() + WAIT_LONG
+    candidates = TEXT_VARIANTS.get(text, [text])
+    xpaths: list[str] = []
+    for candidate in candidates:
+        if exact:
+            xpaths.extend(
+                [
+                    f"//*[self::button or self::a or self::span or self::div or self::label or self::li][normalize-space(.)='{candidate}']",
+                    f"//*[contains(@class, 'el-radio') or contains(@class, 'el-button') or contains(@class, 'btn') or contains(@class, 'radio')][normalize-space(.)='{candidate}']",
+                    f"//label[contains(normalize-space(.), '{candidate}')]",
+                    f"//span[normalize-space(.)='{candidate}']/ancestor::*[self::label or self::li or contains(@class, 'radio') or contains(@class, 'btn')][1]",
+                ]
+            )
+        else:
+            xpaths.extend(
+                [
+                    f"//*[self::button or self::a or self::span or self::div or self::label or self::li][contains(normalize-space(.), '{candidate}')]",
+                    f"//*[contains(@class, 'el-radio') or contains(@class, 'el-button') or contains(@class, 'btn') or contains(@class, 'radio')][contains(normalize-space(.), '{candidate}')]",
+                    f"//label[contains(normalize-space(.), '{candidate}')]",
+                    f"//span[contains(normalize-space(.), '{candidate}')]/ancestor::*[self::label or self::li or contains(@class, 'radio') or contains(@class, 'btn')][1]",
+                ]
+            )
+
+    while time.time() < deadline:
+        for path in iter_frame_paths(driver):
+            try:
+                switch_to_frame_path(driver, path)
+                for xpath in xpaths:
+                    for element in driver.find_elements(By.XPATH, xpath):
+                        try:
+                            if element.is_displayed():
+                                click_element(driver, element)
+                                driver.switch_to.default_content()
+                                return
+                        except WebDriverException:
+                            continue
+            except WebDriverException:
+                continue
+            finally:
+                driver.switch_to.default_content()
+        time.sleep(1)
+
+    save_debug_snapshot(driver, f"missing-{label}")
+    raise RuntimeError(f"未找到“{label}”按钮或选项。")
+
+
+def set_input_value(driver: WebDriver, element, value: str) -> None:
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        const value = arguments[1];
+        el.focus();
+        if ('value' in el) {
+          el.value = '';
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.value = value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        } else {
+          el.textContent = value;
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+        """,
+        element,
+        value,
+    )
+
+
+def execute_in_visible_dialog(driver: WebDriver, script: str, *args):
+    wrapped = f"""
+    const userArgs = arguments;
+    const callback = (dialog, ...passedArgs) => {{
+    {script}
+    }};
+    const dialogs = Array.from(document.querySelectorAll('.el-dialog, [role="dialog"], .dialog, .modal'))
+      .filter((el) => {{
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+      }})
+      .sort((a, b) => {{
+        const ar = a.getBoundingClientRect();
+        const br = b.getBoundingClientRect();
+        return (br.width * br.height) - (ar.width * ar.height);
+      }});
+    const dialog = dialogs[0] || document.body;
+    return callback(dialog, ...userArgs);
+    """
+    return driver.execute_script(wrapped, *args)
+
+
+def wait_for_dialog_text(driver: WebDriver, text: str, timeout: int = WAIT_LONG) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            found = execute_in_visible_dialog(
+                driver,
+                """
+                return ((dialog.innerText || dialog.textContent || '').replace(/\\s+/g, ' ').includes(passedArgs[0]));
+                """,
+                text,
+            )
+            if found:
+                return
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    save_debug_snapshot(driver, f"missing-dialog-text-{text}")
+    raise RuntimeError(f"页面中未等到文本“{text}”。")
+
+
+def click_dialog_option(driver: WebDriver, labels: list[str], label: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        try:
+            clicked = execute_in_visible_dialog(
+                driver,
+                """
+                const labels = passedArgs[0];
+                const textOf = (el) => ((el?.innerText || el?.textContent || '').replace(/\\s+/g, ' ').trim());
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const style = window.getComputedStyle(el);
+                  const rect = el.getBoundingClientRect();
+                  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                };
+                const clickableOf = (el) => el?.closest('label, .el-radio, [role="radio"], button, .el-button, li, div, span') || el;
+                const nodes = Array.from(dialog.querySelectorAll('label, .el-radio, [role="radio"], button, .el-button, li, div, span'));
+                for (const wanted of labels) {
+                  const match = nodes.find((node) => isVisible(node) && textOf(node) === wanted)
+                    || nodes.find((node) => isVisible(node) && textOf(node).includes(wanted));
+                  if (match) {
+                    const target = clickableOf(match);
+                    target.scrollIntoView({ block: 'center', inline: 'center' });
+                    target.click();
+                    return true;
+                  }
+                }
+                return false;
+                """,
+                labels,
+            )
+            if clicked:
+                return
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    save_debug_snapshot(driver, f"missing-dialog-option-{label}")
+    raise RuntimeError(f'未找到“{label}”按钮或选项。')
+
+
+def select_dialog_route(driver: WebDriver, route_text: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        try:
+            selected = execute_in_visible_dialog(
+                driver,
+                """
+                const routeText = passedArgs[0];
+                const textOf = (el) => ((el?.innerText || el?.textContent || '').replace(/\\s+/g, ' ').trim());
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const style = window.getComputedStyle(el);
+                  const rect = el.getBoundingClientRect();
+                  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                };
+                const isChecked = (el) => {
+                  if (!el) return false;
+                  if (el.getAttribute('aria-checked') === 'true') return true;
+                  if (el.classList.contains('is-checked')) return true;
+                  if (el.querySelector('.is-checked')) return true;
+                  const radio = el.querySelector('input[type="radio"]');
+                  return !!(radio && radio.checked);
+                };
+                const routeTitle = Array.from(dialog.querySelectorAll('div, span, label'))
+                  .find((el) => isVisible(el) && textOf(el) === '提交路径');
+                if (!routeTitle) return false;
+                const routeContainer = routeTitle.parentElement || dialog;
+                const options = Array.from(routeContainer.querySelectorAll('label, .el-radio, [role="radio"], li, div, span'))
+                  .filter((el) => isVisible(el) && textOf(el).includes(routeText));
+                const target = options.find((el) => textOf(el) === routeText) || options[0];
+                if (!target) return false;
+                const clickable = target.closest('label, .el-radio, [role="radio"], li, div, span') || target;
+                if (!isChecked(clickable)) {
+                  clickable.scrollIntoView({ block: 'center', inline: 'center' });
+                  clickable.click();
+                }
+                return isChecked(clickable);
+                """,
+                route_text,
+            )
+            if selected:
+                return
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    save_debug_snapshot(driver, "missing-dialog-route-selection")
+    raise RuntimeError(f'未能选中提交路径“{route_text}”。')
+
+
+def fill_dialog_textarea(driver: WebDriver, value: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        try:
+            filled = execute_in_visible_dialog(
+                driver,
+                """
+                const value = passedArgs[0];
+                const candidates = Array.from(dialog.querySelectorAll('textarea, [contenteditable="true"], input[type="text"]'))
+                  .filter((el) => {
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                  });
+                const target = candidates[0];
+                if (!target) return false;
+                target.focus();
+                if ('value' in target) {
+                  target.value = '';
+                  target.dispatchEvent(new Event('input', { bubbles: true }));
+                  target.value = value;
+                  target.dispatchEvent(new Event('input', { bubbles: true }));
+                  target.dispatchEvent(new Event('change', { bubbles: true }));
+                } else {
+                  target.textContent = value;
+                  target.dispatchEvent(new Event('input', { bubbles: true }));
+                  target.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                return true;
+                """,
+                value,
+            )
+            if filled:
+                return
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    save_debug_snapshot(driver, "missing-dialog-textarea")
+    raise RuntimeError("未找到处理意见输入框。")
+
+
+def click_dialog_button(driver: WebDriver, labels: list[str], label: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        try:
+            clicked = execute_in_visible_dialog(
+                driver,
+                """
+                const labels = passedArgs[0];
+                const textOf = (el) => ((el?.innerText || el?.textContent || '').replace(/\\s+/g, ' ').trim());
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const style = window.getComputedStyle(el);
+                  const rect = el.getBoundingClientRect();
+                  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                };
+                const buttons = Array.from(dialog.querySelectorAll('button, .el-button, [role="button"]'))
+                  .filter((el) => isVisible(el));
+                for (const wanted of labels) {
+                  const match = buttons.find((btn) => textOf(btn) === wanted)
+                    || buttons.find((btn) => textOf(btn).includes(wanted));
+                  if (match) {
+                    match.scrollIntoView({ block: 'center', inline: 'center' });
+                    match.click();
+                    return true;
+                  }
+                }
+                return false;
+                """,
+                labels,
+            )
+            if clicked:
+                return
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    save_debug_snapshot(driver, f"missing-dialog-button-{label}")
+    raise RuntimeError(f'未找到“{label}”按钮。')
+
+
+def search_and_select_assignee_in_dialog(driver: WebDriver, assignee: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        try:
+            selected = execute_in_visible_dialog(
+                driver,
+                """
+                const assignee = passedArgs[0];
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const style = window.getComputedStyle(el);
+                  const rect = el.getBoundingClientRect();
+                  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+                };
+                const textOf = (el) => ((el?.innerText || el?.textContent || '').replace(/\\s+/g, ' ').trim());
+                const rect = dialog.getBoundingClientRect();
+                const centerX = rect.left + rect.width / 2;
+                const inputs = Array.from(dialog.querySelectorAll('input'))
+                  .filter((el) => isVisible(el));
+                const leftInput = inputs
+                  .map((el) => ({ el, rect: el.getBoundingClientRect() }))
+                  .filter((item) => item.rect.left < centerX)
+                  .sort((a, b) => a.rect.left - b.rect.left)[0];
+                if (!leftInput) return false;
+                leftInput.el.focus();
+                leftInput.el.value = assignee;
+                leftInput.el.dispatchEvent(new Event('input', { bubbles: true }));
+                leftInput.el.dispatchEvent(new Event('change', { bubbles: true }));
+                const candidates = Array.from(dialog.querySelectorAll('span, div, li, label'))
+                  .filter((el) => {
+                    if (!isVisible(el)) return false;
+                    const r = el.getBoundingClientRect();
+                    if (r.left >= centerX) return false;
+                    const text = textOf(el);
+                    if (!text || text !== assignee) return false;
+                    if (el.querySelector('span, div, li, label')) {
+                      const childTexts = Array.from(el.querySelectorAll('span, div, li, label'))
+                        .map((node) => textOf(node))
+                        .filter(Boolean);
+                      if (childTexts.some((childText) => childText !== assignee)) return false;
+                    }
+                    return true;
+                  });
+                const picked = candidates
+                  .sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)[0];
+                if (!picked) return false;
+                picked.scrollIntoView({ block: 'center', inline: 'center' });
+                picked.click();
+                return true;
+                """,
+                assignee,
+            )
+            if selected:
+                return
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    save_debug_snapshot(driver, f"missing-assignee-{assignee}")
+    raise RuntimeError(f"页面中未等到提交人“{assignee}”。")
+
+
+def fill_visible_textarea(driver: WebDriver, value: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        for path in iter_frame_paths(driver):
+            try:
+                switch_to_frame_path(driver, path)
+                candidates = driver.find_elements(By.XPATH, "//textarea | //*[@contenteditable='true']")
+                for element in candidates:
+                    try:
+                        if element.is_displayed():
+                            set_input_value(driver, element, value)
+                            driver.switch_to.default_content()
+                            return
+                    except WebDriverException:
+                        continue
+            except WebDriverException:
+                continue
+            finally:
+                driver.switch_to.default_content()
+        time.sleep(1)
+
+    save_debug_snapshot(driver, "missing-comment-textarea")
+    raise RuntimeError("未找到处理意见输入框。")
+
+
+def fill_leftmost_search_input(driver: WebDriver, value: str) -> None:
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        best_match = None
+        best_path: list[int] | None = None
+        for path in iter_frame_paths(driver):
+            try:
+                switch_to_frame_path(driver, path)
+                candidates = driver.find_elements(
+                    By.XPATH,
+                    "//input[contains(@placeholder, '搜索') or contains(@placeholder, '姓名')]",
+                )
+                for element in candidates:
+                    try:
+                        if not element.is_displayed():
+                            continue
+                        location = element.location_once_scrolled_into_view
+                        x_value = location.get("x", 999999)
+                        if best_match is None or x_value < best_match[0]:
+                            best_match = (x_value, element)
+                            best_path = path
+                    except WebDriverException:
+                        continue
+            except WebDriverException:
+                continue
+            finally:
+                driver.switch_to.default_content()
+        if best_match is not None and best_path is not None:
+            switch_to_frame_path(driver, best_path)
+            set_input_value(driver, best_match[1], value)
+            driver.switch_to.default_content()
+            return
+        time.sleep(1)
+
+    save_debug_snapshot(driver, "missing-assignee-search")
+    raise RuntimeError("未找到提交人搜索框。")
+
+
+def wait_for_text(driver: WebDriver, text: str, timeout: int = WAIT_LONG) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        for path in iter_frame_paths(driver):
+            try:
+                switch_to_frame_path(driver, path)
+                if text in body_text(driver):
+                    driver.switch_to.default_content()
+                    return
+            except WebDriverException:
+                continue
+            finally:
+                driver.switch_to.default_content()
+        time.sleep(1)
+    save_debug_snapshot(driver, f"missing-text-{text}")
+    raise RuntimeError(f"页面中未等到文本“{text}”。")
+
+
+def extract_person_opinion(driver: WebDriver, person_name: str) -> str | None:
+    candidates: list[str] = []
+    deadline = time.time() + WAIT_LONG
+    while time.time() < deadline:
+        for path in iter_frame_paths(driver):
+            try:
+                switch_to_frame_path(driver, path)
+                elements = driver.find_elements(
+                    By.XPATH,
+                    f"//*[normalize-space(.)='{person_name}' or contains(normalize-space(.), '{person_name}')]",
+                )
+                for element in elements:
+                    try:
+                        if not element.is_displayed():
+                            continue
+                        row = element.find_element(
+                            By.XPATH,
+                            "./ancestor::*[self::tr or self::li or contains(@class, 'row') or contains(@class, 'item') or contains(@class, 'cell')][1]",
+                        )
+                    except WebDriverException:
+                        row = element
+                    row_text = normalize_cell_text(row.text)
+                    if person_name not in row_text:
+                        continue
+                    opinion_text = row_text.split(person_name, 1)[0].strip()
+                    opinion_text = re.sub(r"\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}", "", opinion_text).strip()
+                    if opinion_text:
+                        candidates.append(opinion_text)
+            except WebDriverException:
+                continue
+            finally:
+                driver.switch_to.default_content()
+        if candidates:
+            break
+        time.sleep(1)
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=len)
+    append_debug_text("approval-opinion-candidates", "\n".join(candidates[:50]))
+    for candidate in candidates:
+        if candidate == TARGET_APPROVAL_EXACT_OPINION:
+            return candidate
+    return candidates[0]
+
+
+def close_detail_without_processing(driver: WebDriver) -> None:
+    click_visible_text(driver, "关闭", "关闭")
+
+
+def click_submit_button(driver: WebDriver) -> None:
+    click_visible_text(driver, "提交处理", "提交处理")
+
+
+def complete_submit_dialog(driver: WebDriver) -> None:
+    wait_for_dialog_text(driver, "提交路径")
+    click_dialog_option(driver, ["其它", "其他"], "处理意见-其他")
+    fill_dialog_textarea(driver, TARGET_COMMENT)
+    select_dialog_route(driver, TARGET_ROUTE)
+    click_dialog_button(driver, ["提交"], "提交")
+
+
+def choose_assignee_and_confirm(driver: WebDriver) -> None:
+    wait_for_dialog_text(driver, "待选列表")
+    search_and_select_assignee_in_dialog(driver, TARGET_ASSIGNEE)
+    time.sleep(1)
+    click_dialog_button(driver, ["确定"], "确定")
+    wait_for_dialog_text(driver, "提交确认")
+    click_dialog_button(driver, ["确定"], "提交确认-确定")
+
+
+def process_one(
+    driver: WebDriver,
+    excluded_titles: set[str] | None = None,
+    todo_handle: str | None = None,
+) -> tuple[str, str, str | None]:
+    active_todo_handle = ensure_todo_tab(driver, todo_handle)
+    rows = get_target_rows(driver, excluded_titles)
+    if not rows:
+        append_debug_text(
+            "page-meta",
+            f"title={driver.title}\nurl={driver.current_url}\nhandles={driver.window_handles}",
+        )
+        save_debug_snapshot(driver, "no-target-rows")
+        return "idle", "当前页没有可处理的“相关部门会签”单据。", active_todo_handle
+
+    frame_path, row, title_index = rows[0]
+    title = find_row_title(row)
+    logging.info("开始处理: %s", title)
+    open_row_detail_and_switch(driver, frame_path, row, title_index)
+    time.sleep(2)
+    save_debug_snapshot(driver, "detail-page")
+
+    opinion = extract_person_opinion(driver, TARGET_APPROVAL_PERSON)
+    if opinion not in TARGET_APPROVAL_OPINIONS:
+        append_debug_text(
+            "skip-opinion-mismatch",
+            f"title={title}\nperson={TARGET_APPROVAL_PERSON}\nopinion={opinion or '<missing>'}",
+        )
+        logging.info(
+            "跳过单据: %s，%s 的意见不是目标意见之一 %s",
+            title,
+            TARGET_APPROVAL_PERSON,
+            sorted(TARGET_APPROVAL_OPINIONS),
+        )
+        close_detail_without_processing(driver)
+        active_todo_handle = wait_return_to_list(driver, active_todo_handle)
+        active_todo_handle = refresh_todo_list(driver, active_todo_handle)
+        return "skipped", title, active_todo_handle
+
+    click_submit_button(driver)
+    time.sleep(1)
+    complete_submit_dialog(driver)
+    choose_assignee_and_confirm(driver)
+    active_todo_handle = wait_return_to_list(driver, active_todo_handle)
+    active_todo_handle = refresh_todo_list(driver, active_todo_handle)
+    logging.info("处理完成: %s", title)
+    return "processed", title, active_todo_handle
 
 
 def main() -> int:
@@ -1320,17 +2029,12 @@ def main() -> int:
                 excluded_titles.intersection_update(visible_titles)
             except Exception:  # noqa: BLE001
                 pass
-            has_item, message, todo_handle = process_one(driver, excluded_titles, todo_handle)
-            if not has_item:
-                logging.info("%s %s 秒后继续监控。", message, WAIT_IDLE_RETRY)
-                time.sleep(WAIT_IDLE_RETRY)
-                try:
-                    todo_handle = wait_return_to_list(driver, todo_handle)
-                except Exception:  # noqa: BLE001
-                    wait_for_todo_table(driver, allow_goto=True)
-                    todo_handle = ensure_todo_tab(driver, todo_handle)
-                continue
-            processed += 1
+            status, message, todo_handle = process_one(driver, excluded_titles, todo_handle)
+            if status == "idle":
+                logging.info("%s 已无可处理目标公文，程序结束。", message)
+                break
+            if status == "processed":
+                processed += 1
             excluded_titles.add(message)
 
         logging.info("本次共处理 %s 条。", processed)

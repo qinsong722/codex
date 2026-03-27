@@ -4,7 +4,7 @@
 a = Analysis(
     ['oa_auto_approve.py'],
     pathex=[],
-    binaries=[('drivers\\chromedriver-unpacked-138\\chromedriver-win64\\chromedriver.exe', 'drivers/chromedriver-138')],
+    binaries=[('drivers\\chromedriver-unpacked-146\\chromedriver-win64\\chromedriver.exe', 'drivers/chromedriver-146')],
     datas=[],
     hiddenimports=['selenium.webdriver.chrome.webdriver'],
     hookspath=[],
@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='oa-auto-approve',
+    name='oa-auto-approve-leader',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -2,11 +2,19 @@
 setlocal
 pushd "%~dp0"
 
-set "CHROME_EXE=C:\Program Files\Google\Chrome\Application\chrome.exe"
+set "CHROME_EXE="
+for %%I in ("C:\Program Files\Google\Chrome\Application\chrome.exe" "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe") do (
+  if exist "%%~I" (
+    for /f "usebackq delims=" %%V in (`powershell -NoProfile -Command "(Get-Item '%%~I').VersionInfo.ProductVersion"`) do (
+      echo %%V | findstr /b "146." >nul && if not defined CHROME_EXE set "CHROME_EXE=%%~I"
+    )
+  )
+)
+if not defined CHROME_EXE set "CHROME_EXE=C:\Program Files\Google\Chrome\Application\chrome.exe"
 if not exist "%CHROME_EXE%" set "CHROME_EXE=C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 set "CHROME_PROFILE=%~dp0browser-profile\chrome-devtools"
 set "LOGIN_URL=http://oa.hq.cmcc/portal-new/login"
-set "APP_EXE=%~dp0dist\oa-auto-approve.exe"
+set "APP_EXE=%~dp0dist\oa-auto-approve-leader.exe"
 
 if not exist "%CHROME_EXE%" (
   echo [ERROR] Chrome was not found.
@@ -14,6 +22,8 @@ if not exist "%CHROME_EXE%" (
   popd
   exit /b 1
 )
+
+echo [INFO] Using Chrome: %CHROME_EXE%
 
 if not exist "%APP_EXE%" (
   echo [ERROR] dist\oa-auto-approve.exe was not found.
@@ -32,12 +42,12 @@ echo [2/4] Starting Chrome with remote debugging...
 start "" "%CHROME_EXE%" --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --user-data-dir="%CHROME_PROFILE%" --profile-directory=Default --no-first-run --no-default-browser-check "%LOGIN_URL%"
 timeout /t 5 /nobreak >nul
 
-echo [3/4] Starting OA approver...
+echo [3/4] Starting OA leader approver...
 "%APP_EXE%" --browser chrome --attach-debugger 127.0.0.1:9222
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if not "%EXIT_CODE%"=="0" (
-  echo [ERROR] oa-auto-approve.exe exited with code %EXIT_CODE%.
+  echo [ERROR] oa-auto-approve-leader.exe exited with code %EXIT_CODE%.
   pause
 )
 
