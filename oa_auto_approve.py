@@ -215,10 +215,14 @@ def find_browser_exe(browser: str) -> Path:
 
 def find_chromedriver() -> Path:
     candidates = [
-        resource_path("drivers/chromedriver-138/chromedriver.exe"),
+        resource_path("drivers/chromedriver-146/chromedriver.exe"),
         resource_path("drivers/chromedriver.exe"),
         resource_path("drivers/chromedriver-win64/chromedriver.exe"),
+        resource_path("drivers/chromedriver-138/chromedriver.exe"),
+        resource_path("drivers/chromedriver-130/chromedriver.exe"),
+        Path(__file__).resolve().parent / "drivers" / "chromedriver-unpacked-146" / "chromedriver-win64" / "chromedriver.exe",
         Path(__file__).resolve().parent / "drivers" / "chromedriver-unpacked-138" / "chromedriver-win64" / "chromedriver.exe",
+        Path(__file__).resolve().parent / "drivers" / "chromedriver-unpacked" / "chromedriver-win64" / "chromedriver.exe",
         Path(__file__).resolve().parent / "drivers" / "chromedriver.exe",
         Path(__file__).resolve().parent / "drivers" / "chromedriver-win64" / "chromedriver.exe",
     ]

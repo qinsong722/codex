@@ -17,6 +17,6 @@ pyinstaller `
     --clean `
     --onefile `
     --name oa-auto-approve `
-    --add-binary "drivers\chromedriver-unpacked-138\chromedriver-win64\chromedriver.exe;drivers/chromedriver-138" `
+    --add-binary "drivers\chromedriver-unpacked-146\chromedriver-win64\chromedriver.exe;drivers/chromedriver-146" `
     --hidden-import selenium.webdriver.chrome.webdriver `
     oa_auto_approve.py
