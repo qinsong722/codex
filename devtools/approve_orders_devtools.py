@@ -42,9 +42,10 @@ LOGIN_PAGE_READY_TIMEOUT_SECONDS = 60
 SEND_CODE_READY_TIMEOUT_SECONDS = 25
 SEND_CODE_CONFIRM_TIMEOUT_SECONDS = 6
 SEND_CODE_SECOND_CLICK_SECONDS = 1.2
-LOGIN_SUBMIT_GRACE_SECONDS = 20
-LOGIN_RESUBMIT_INTERVAL_SECONDS = 8
-LOGIN_RESUBMIT_MAX_ATTEMPTS = 2
+LOGIN_WAIT_TIMEOUT_SECONDS = 420
+LOGIN_SUBMIT_GRACE_SECONDS = 35
+LOGIN_RESUBMIT_INTERVAL_SECONDS = 12
+LOGIN_RESUBMIT_MAX_ATTEMPTS = 3
 SELECTION_REOPEN_MAX_ATTEMPTS = 3
 
 CHROME_BINARY_CANDIDATES = [
@@ -668,7 +669,7 @@ class DevtoolsApproveBot:
 
     def wait_for_login_success(self) -> None:
         self.set_step("wait_for_login_success")
-        deadline = time.time() + 300
+        deadline = time.time() + LOGIN_WAIT_TIMEOUT_SECONDS
         submit_grace_deadline = 0.0
         login_clicked = False
         login_click_attempts = 0
@@ -988,6 +989,8 @@ class DevtoolsApproveBot:
         return any(self.find_visible((By.XPATH, xpath), timeout=1) for xpath in empty_xpaths)
 
     def find_order_candidates(self) -> list:
+        if not self.is_back_on_list():
+            return []
         selectors = [
             (By.CSS_SELECTOR, ".audit-list .item"),
             (By.CSS_SELECTOR, ".audit-item"),
@@ -998,7 +1001,19 @@ class DevtoolsApproveBot:
         ]
         for locator in selectors:
             elements = self.driver.find_elements(*locator)
-            visible = [el for el in elements if self.is_clickable_candidate(el)]
+            visible = []
+            for el in elements:
+                if not self.is_clickable_candidate(el):
+                    continue
+                try:
+                    text = normalize_text(el.text)
+                except StaleElementReferenceException:
+                    continue
+                if "GDP" not in text:
+                    continue
+                if "广州" not in text and "用车" not in text:
+                    continue
+                visible.append(el)
             if visible:
                 return visible
         return []
@@ -1133,12 +1148,17 @@ class DevtoolsApproveBot:
             except WebDriverException:
                 current_url = ""
                 body_text = ""
-            if (
-                "#/travelApplyList" not in current_url
-                and "申请单审批" not in body_text
-                and "待审批" not in body_text
-                and not self.page_has_visible_approval_button()
-            ):
+            detail_markers = [
+                "申请单详情",
+                "基本信息",
+                "明细信息",
+                "流程跟踪",
+                "用车基本信息",
+                "不同意",
+                "下一路径",
+                "下一审批人",
+            ]
+            if "#/travelApplyList" not in current_url and any(marker in body_text for marker in detail_markers):
                 return True
             time.sleep(0.2)
         return False
@@ -1360,15 +1380,22 @@ class DevtoolsApproveBot:
 
     def is_back_on_list(self) -> bool:
         try:
-            if "#/travelApplyList" in self.driver.current_url and self.find_order_candidates():
+            current_url = self.driver.current_url
+            if "#/travelApplyList" not in current_url:
+                return False
+            try:
+                body_text = normalize_text(self.driver.find_element(By.TAG_NAME, "body").text)
+            except WebDriverException:
+                body_text = ""
+            if "申请单审批" in body_text and ("待审批" in body_text or "已审批" in body_text or "审批中" in body_text):
                 return True
+            if self.page_has_visible_approval_button():
+                return True
+            if "没有匹配的申请单" in body_text or "暂无" in body_text or "无数据" in body_text:
+                return True
+            return False
         except WebDriverException:
             return False
-        list_markers = [
-            (By.XPATH, "//*[contains(normalize-space(.), '申请单审批')]"),
-            (By.XPATH, "//*[contains(normalize-space(.), '审批中')]"),
-        ]
-        return any(self.find_visible(locator, timeout=1) for locator in list_markers)
 
     def dismiss_noise(self) -> None:
         try:

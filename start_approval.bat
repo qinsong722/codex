@@ -1,3 +1,0 @@
-@echo off
-cd /d "%~dp0\selenium"
-python approve_orders.py
