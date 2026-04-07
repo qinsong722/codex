@@ -127,42 +127,138 @@ class ApproverSelectionTests(unittest.TestCase):
         self.assertIs(target, checkbox)
 
 
+class ApproverAuditTests(unittest.TestCase):
+    def setUp(self):
+        self.bot = DevtoolsApproveBot.__new__(DevtoolsApproveBot)
+        self.bot.last_validated_approver_name = ""
+        self.bot.last_validation_mode = ""
+
+    def test_audit_uses_binding_value_when_available(self):
+        self.bot.probe_selected_approver_binding_value = lambda: {"value": "Alice", "source": "hidden-input"}
+        self.bot.get_selected_approver_name = lambda: "Bob"
+        self.bot.get_selected_approver_text = lambda: "Bob"
+        self.bot.target_approver_row_looks_selected = lambda name: False
+        self.bot.selection_page_contains_approver_name = lambda name: False
+        self.bot.driver = object()
+
+        audit = self.bot.assess_selected_approver_audit("Alice")
+
+        self.assertEqual(audit["verdict"], "通过")
+        self.assertEqual(audit["binding_value"], "Alice")
+        self.assertEqual(audit["binding_source"], "hidden-input")
+        self.assertIn("最终绑定值", audit["evidence"])
+
+    def test_audit_flags_binding_mismatch(self):
+        self.bot.probe_selected_approver_binding_value = lambda: {"value": "Bob", "source": "hidden-input"}
+        self.bot.get_selected_approver_name = lambda: "Bob"
+        self.bot.get_selected_approver_text = lambda: "Bob"
+        self.bot.target_approver_row_looks_selected = lambda name: False
+        self.bot.selection_page_contains_approver_name = lambda name: False
+        self.bot.driver = object()
+
+        audit = self.bot.assess_selected_approver_audit("Alice")
+
+        self.assertEqual(audit["verdict"], "未通过")
+        self.assertIn("最终绑定值是 'Bob'", audit["evidence"])
+
+    def test_get_selected_approver_name_falls_back_to_flow_tracking(self):
+        self.bot.get_selected_approver_text = lambda: ""
+        self.bot.get_flow_tracking_active_approver_name = lambda: "Alice"
+
+        self.assertEqual(self.bot.get_selected_approver_name(), "Alice")
+
+    def test_confirm_selected_approver_before_submit_skips_dialog_on_pass(self):
+        self.bot.assess_selected_approver_audit = lambda expected_name: {
+            "verdict": "通过",
+            "binding_value": "Alice",
+            "binding_source": "flow-tracking-active",
+            "actual_name": "Alice",
+            "clicked_name": "Alice",
+            "clicked_text": "Alice",
+            "selection_state": "目标行已选中",
+            "visible_target": "目标审批人仍可见",
+            "evidence": "最终绑定值 'Alice' 与目标一致。",
+            "validation_mode": "",
+        }
+        self.bot.log = lambda message: None
+
+        class FailIfCalledTk:
+            def withdraw(self):
+                raise AssertionError("dialog should not be created when audit passes")
+
+            def attributes(self, *args, **kwargs):
+                raise AssertionError("dialog should not be created when audit passes")
+
+            def destroy(self):
+                raise AssertionError("dialog should not be created when audit passes")
+
+        with patch("approve_orders_devtools.tk.Tk", return_value=FailIfCalledTk()), patch(
+            "approve_orders_devtools.messagebox.askokcancel",
+            side_effect=AssertionError("dialog should not be shown when audit passes"),
+        ):
+            self.bot.confirm_selected_approver_before_submit("Alice")
+
+    def test_confirm_selected_approver_before_submit_shows_dialog_for_heuristic_pass(self):
+        self.bot.assess_selected_approver_audit = lambda expected_name: {
+            "verdict": "通过",
+            "binding_value": "",
+            "binding_source": "",
+            "actual_name": "Alice",
+            "clicked_name": "Alice",
+            "clicked_text": "Alice",
+            "selection_state": "目标行已选中",
+            "visible_target": "目标审批人仍可见",
+            "evidence": "页面文本与目标一致。",
+            "validation_mode": "",
+        }
+        self.bot.log = lambda message: None
+        shown = {"created": False}
+
+        class FakeTk:
+            def withdraw(self):
+                shown["created"] = True
+
+            def attributes(self, *args, **kwargs):
+                shown["created"] = True
+
+            def destroy(self):
+                shown["created"] = True
+
+        with patch("approve_orders_devtools.tk.Tk", return_value=FakeTk()), patch(
+            "approve_orders_devtools.messagebox.askokcancel",
+            return_value=False,
+        ) as ask:
+            with self.assertRaises(RuntimeError):
+                self.bot.confirm_selected_approver_before_submit("Alice")
+
+        self.assertTrue(shown["created"])
+        self.assertTrue(ask.called)
+
+
 class AgreementTests(unittest.TestCase):
     def test_ensure_agreement_checked_uses_image_only(self):
         bot = DevtoolsApproveBot.__new__(DevtoolsApproveBot)
-        clicks = []
-
-        class AgreementImage:
-            def __init__(self, src):
-                self._src = src
-
-            def get_attribute(self, name):
-                if name == "src":
-                    return self._src
-                return None
-
-        before = AgreementImage("before")
-        after = AgreementImage("after")
-
-        def fake_find_visible(locator, timeout=2):
-            if locator[1] in (".private-in img", "//div[contains(@class,'private-in')]//img"):
-                return before if not clicks else after
-            return None
-
-        def fake_safe_click(element):
-            clicks.append(element)
+        calls = []
 
         class FakeDriver:
             current_url = "https://b2bjoy.10086.cn/t100/#/login"
 
-        bot.find_visible = fake_find_visible
-        bot.safe_click = fake_safe_click
+            def __init__(self):
+                self.clicked = False
+
+            def execute_script(self, script, *args):
+                calls.append(script)
+                if "document.elementFromPoint" in script:
+                    self.clicked = True
+                    return True
+                return self.clicked
+
         bot.driver = FakeDriver()
 
         bot.ensure_agreement_checked()
 
-        self.assertEqual(len(clicks), 1)
-        self.assertIs(clicks[0], before)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(bot.driver.clicked)
 
 
 if __name__ == "__main__":

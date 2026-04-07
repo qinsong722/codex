@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import atexit
+import ctypes
 import os
 import socket
 import subprocess
@@ -9,6 +10,7 @@ import time
 import traceback
 import tkinter as tk
 from pathlib import Path
+from ctypes import wintypes
 from tkinter import messagebox, simpledialog
 
 from selenium import webdriver
@@ -42,10 +44,9 @@ LOGIN_PAGE_READY_TIMEOUT_SECONDS = 60
 SEND_CODE_READY_TIMEOUT_SECONDS = 25
 SEND_CODE_CONFIRM_TIMEOUT_SECONDS = 6
 SEND_CODE_SECOND_CLICK_SECONDS = 1.2
-LOGIN_WAIT_TIMEOUT_SECONDS = 420
-LOGIN_SUBMIT_GRACE_SECONDS = 35
-LOGIN_RESUBMIT_INTERVAL_SECONDS = 12
-LOGIN_RESUBMIT_MAX_ATTEMPTS = 3
+LOGIN_SUBMIT_GRACE_SECONDS = 20
+LOGIN_RESUBMIT_INTERVAL_SECONDS = 8
+LOGIN_RESUBMIT_MAX_ATTEMPTS = 2
 SELECTION_REOPEN_MAX_ATTEMPTS = 3
 
 CHROME_BINARY_CANDIDATES = [
@@ -266,6 +267,8 @@ class DevtoolsApproveBot:
         self.approver_selection_attempted = False
         self.last_validated_approver_name = ""
         self.last_validation_mode = ""
+        self.last_clicked_approver_name = ""
+        self.last_clicked_approver_text = ""
         atexit.register(self.close)
 
     def prepare_profile_dir(self) -> Path:
@@ -281,6 +284,43 @@ class DevtoolsApproveBot:
         except (OSError, ValueError):
             pass
         append_log(message)
+
+    def ensure_browser_window_visible(self) -> None:
+        if self.browser_process is None or self.driver is None:
+            return
+        try:
+            self.driver.maximize_window()
+        except Exception:
+            pass
+        try:
+            pid = self.browser_process.pid
+        except Exception:
+            return
+        try:
+            user32 = ctypes.windll.user32
+            hwnds: list[int] = []
+
+            def enum_windows_proc(hwnd, _lparam):
+                try:
+                    if not user32.IsWindowVisible(hwnd):
+                        return True
+                    found_pid = wintypes.DWORD()
+                    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(found_pid))
+                    if found_pid.value == pid:
+                        hwnds.append(hwnd)
+                except Exception:
+                    pass
+                return True
+
+            enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)(enum_windows_proc)
+            user32.EnumWindows(enum_proc, 0)
+            if hwnds:
+                hwnd = hwnds[0]
+                user32.ShowWindow(hwnd, 9)
+                user32.SetForegroundWindow(hwnd)
+                user32.BringWindowToTop(hwnd)
+        except Exception:
+            return
 
     def set_step(self, step: str) -> None:
         self.log(f"Step: {step}")
@@ -669,7 +709,7 @@ class DevtoolsApproveBot:
 
     def wait_for_login_success(self) -> None:
         self.set_step("wait_for_login_success")
-        deadline = time.time() + LOGIN_WAIT_TIMEOUT_SECONDS
+        deadline = time.time() + 300
         submit_grace_deadline = 0.0
         login_clicked = False
         login_click_attempts = 0
@@ -934,6 +974,16 @@ class DevtoolsApproveBot:
             try:
                 self.handle_submitter_selection_if_needed()
             except RuntimeError as exc:
+                if "Manual cancel before submit." in str(exc):
+                    self.log(
+                        "Manual approval was canceled. Pausing for 30 seconds before returning to the list page."
+                    )
+                    self.pause_after_manual_cancel()
+                    self.return_to_list_if_needed()
+                    self.wait_for_page_ready(settle_seconds=0.2)
+                    self.dismiss_noise()
+                    return approved
+            except RuntimeError as exc:
                 if "Approver list is still loading and did not finish in time." in str(exc):
                     recovered = False
                     for attempt in range(1, SELECTION_REOPEN_MAX_ATTEMPTS + 1):
@@ -959,6 +1009,13 @@ class DevtoolsApproveBot:
             self.return_to_list_if_needed()
             self.wait_for_page_ready(settle_seconds=0.2)
             self.dismiss_noise()
+            time.sleep(1)
+
+    def pause_after_manual_cancel(self) -> None:
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if not self.session_alive():
+                break
             time.sleep(1)
 
     def retry_order_after_selection_timeout(self) -> bool:
@@ -989,8 +1046,6 @@ class DevtoolsApproveBot:
         return any(self.find_visible((By.XPATH, xpath), timeout=1) for xpath in empty_xpaths)
 
     def find_order_candidates(self) -> list:
-        if not self.is_back_on_list():
-            return []
         selectors = [
             (By.CSS_SELECTOR, ".audit-list .item"),
             (By.CSS_SELECTOR, ".audit-item"),
@@ -1001,19 +1056,7 @@ class DevtoolsApproveBot:
         ]
         for locator in selectors:
             elements = self.driver.find_elements(*locator)
-            visible = []
-            for el in elements:
-                if not self.is_clickable_candidate(el):
-                    continue
-                try:
-                    text = normalize_text(el.text)
-                except StaleElementReferenceException:
-                    continue
-                if "GDP" not in text:
-                    continue
-                if "广州" not in text and "用车" not in text:
-                    continue
-                visible.append(el)
+            visible = [el for el in elements if self.is_clickable_candidate(el)]
             if visible:
                 return visible
         return []
@@ -1113,6 +1156,7 @@ class DevtoolsApproveBot:
             if self.has_no_pending_orders():
                 return False
             if self.click_first_visible_approval_button():
+                self.ensure_browser_window_visible()
                 if self.wait_for_order_opened():
                     return True
                 time.sleep(0.25)
@@ -1122,6 +1166,7 @@ class DevtoolsApproveBot:
             button = self.find_first_order_approval_button()
             if button:
                 try:
+                    self.ensure_browser_window_visible()
                     self.safe_click(button)
                     if self.wait_for_order_opened():
                         return True
@@ -1148,17 +1193,12 @@ class DevtoolsApproveBot:
             except WebDriverException:
                 current_url = ""
                 body_text = ""
-            detail_markers = [
-                "申请单详情",
-                "基本信息",
-                "明细信息",
-                "流程跟踪",
-                "用车基本信息",
-                "不同意",
-                "下一路径",
-                "下一审批人",
-            ]
-            if "#/travelApplyList" not in current_url and any(marker in body_text for marker in detail_markers):
+            if (
+                "#/travelApplyList" not in current_url
+                and "申请单审批" not in body_text
+                and "待审批" not in body_text
+                and not self.page_has_visible_approval_button()
+            ):
                 return True
             time.sleep(0.2)
         return False
@@ -1177,6 +1217,8 @@ class DevtoolsApproveBot:
         self.approver_selection_attempted = False
         self.last_validated_approver_name = ""
         self.last_validation_mode = ""
+        self.last_clicked_approver_name = ""
+        self.last_clicked_approver_text = ""
         self.wait_for_selection_stage_ready()
         if not self.selection_page_present():
             submit_button = self.find_bottom_action_button("提交")
@@ -1206,43 +1248,219 @@ class DevtoolsApproveBot:
             raise RuntimeError("The submit button was not found after choosing the approver.")
         self.safe_click(submit_button)
 
-    def confirm_selected_approver_before_submit(self, expected_name: str) -> None:
+    def assess_selected_approver_audit(self, expected_name: str) -> dict[str, str]:
+        binding_probe = self.probe_selected_approver_binding_value()
+        binding_value = binding_probe["value"] if binding_probe else ""
+        binding_source = binding_probe["source"] if binding_probe else ""
         actual_name = self.get_selected_approver_name()
-        if self.last_validated_approver_name and text_matches(expected_name, self.last_validated_approver_name):
-            validation_status = "人名校验：通过"
-            mode_hint = f"校验方式：{self.last_validation_mode or '目标行勾选状态'}"
-            prompt = (
-                f"{validation_status}\n"
-                f"{mode_hint}\n"
-                f"目标审批人：{expected_name}\n"
-                f"程序确认当前勾选与目标审批人一致。\n\n"
-                "请再核对页面上的审批人是否正确。\n确认无误后点击“确定”，程序才会继续提交。"
-            )
-        elif actual_name and text_matches(expected_name, actual_name):
-            validation_status = "人名校验：通过"
-            prompt = (
-                f"{validation_status}\n"
-                f"目标审批人：{expected_name}\n"
-                f"页面当前实际选中审批人：{actual_name}\n\n"
-                "请核对页面上的审批人是否正确。\n确认无误后点击“确定”，程序才会继续提交。"
-            )
+        selected_text = normalize_text(self.get_selected_approver_text())
+        target_row_selected = self.target_approver_row_looks_selected(expected_name)
+        visible_target = self.selection_page_contains_approver_name(expected_name)
+        validated_match = bool(
+            self.last_validated_approver_name and text_matches(expected_name, self.last_validated_approver_name)
+        )
+        clicked_match = bool(
+            getattr(self, "last_clicked_approver_name", "") and text_matches(expected_name, getattr(self, "last_clicked_approver_name", ""))
+        )
+        clicked_text_match = bool(
+            getattr(self, "last_clicked_approver_text", "") and text_matches(expected_name, getattr(self, "last_clicked_approver_text", ""))
+        )
+        binding_match = bool(binding_value and text_matches(expected_name, binding_value))
+        exact_text_match = bool(actual_name and text_matches(expected_name, actual_name))
+
+        if binding_match:
+            verdict = "通过"
+            evidence = f"最终绑定值 '{binding_value}' 与目标一致。"
+        elif binding_value:
+            verdict = "未通过"
+            evidence = f"最终绑定值是 '{binding_value}'，与目标 '{expected_name}' 不一致。"
+        elif exact_text_match and target_row_selected:
+            verdict = "通过"
+            evidence = "页面识别到的选中姓名与目标一致，且目标行也处于选中状态。"
+        elif exact_text_match and validated_match:
+            verdict = "通过"
+            evidence = "页面识别到的选中姓名与目标一致，且自动点击校验结果一致。"
+        elif clicked_match and clicked_text_match:
+            verdict = "待人工核对"
+            if visible_target:
+                evidence = "页面没有稳定回显选中态，但自动点击已命中目标审批人所在行，且页面仍可见该审批人。"
+            else:
+                evidence = "页面没有稳定回显选中态，但自动点击已命中目标审批人所在行。"
+        elif exact_text_match:
+            verdict = "待人工核对"
+            evidence = "页面文本已匹配目标，但独立选中态证据还不够强。"
+        elif target_row_selected or validated_match:
+            verdict = "待人工核对"
+            evidence = "自动点击或行内选中态有迹象，但页面文本没有形成独立闭环确认。"
         elif actual_name:
-            validation_status = "人名校验：未通过"
-            prompt = (
-                f"{validation_status}\n"
-                f"程序识别到当前选中审批人：{actual_name}\n"
-                f"目标审批人：{expected_name}\n\n"
-                "自动识别结果与目标不一致，请务必人工核对页面后再决定是否继续提交。"
-            )
+            verdict = "未通过"
+            evidence = f"页面识别到当前选中审批人是 '{actual_name}'，与目标 '{expected_name}' 不一致。"
         else:
-            validation_status = "人名校验：无法自动确认"
-            prompt = (
-                f"{validation_status}\n"
-                f"目标审批人：{expected_name}\n\n"
-                "程序暂时无法自动确认当前实际勾选对象，请你直接核对页面上的勾选结果。\n"
-                "只有确认页面上确实选对后，才点击“确定”。"
+            verdict = "无法自动确认"
+            evidence = "页面没有读取到足够明确的选中信息。"
+
+        selection_state = "目标行已选中" if target_row_selected else "未检测到目标行选中"
+        return {
+            "verdict": verdict,
+            "binding_value": binding_value,
+            "binding_source": binding_source,
+            "actual_name": actual_name,
+            "selected_text": selected_text,
+            "clicked_name": getattr(self, "last_clicked_approver_name", "") or "",
+            "clicked_text": getattr(self, "last_clicked_approver_text", "") or "",
+            "visible_target": "目标审批人仍可见" if visible_target else "未再看到目标审批人",
+            "selection_state": selection_state,
+            "evidence": evidence,
+            "validation_mode": self.last_validation_mode or "",
+        }
+
+    def probe_selected_approver_binding_value(self) -> dict[str, str] | None:
+        try:
+            result = self.driver.execute_script(
+                """
+                const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+                const sectionMarker = Array.from(document.querySelectorAll('div,span,p,strong,h1,h2,h3'))
+                  .find(el => normalize(el.innerText) === '下一审批人');
+                if (!sectionMarker) return null;
+
+                const flowMarker = Array.from(document.querySelectorAll('div,span,p,strong,h1,h2,h3'))
+                  .find(el => normalize(el.innerText).includes('流程跟踪'));
+
+                const sectionTop = sectionMarker.getBoundingClientRect().top - 8;
+                const sectionBottom = flowMarker
+                  ? flowMarker.getBoundingClientRect().top - 8
+                  : window.innerHeight + 2000;
+
+                const isInSection = el => {
+                  const rect = el.getBoundingClientRect();
+                  return rect.width > 0
+                    && rect.height > 0
+                    && rect.bottom >= sectionTop
+                    && rect.top <= sectionBottom;
+                };
+
+                const selectedTokens = [
+                  'checked',
+                  'selected',
+                  'is-checked',
+                  'active',
+                  'van-radio__icon--checked',
+                  'van-checkbox__icon--checked',
+                ];
+
+                const looksSelected = el => {
+                  if (!el || !isInSection(el)) return false;
+                  const classes = String(el.className || '').toLowerCase();
+                  const ariaChecked = String(el.getAttribute?.('aria-checked') || '').toLowerCase();
+                  const checkedAttr = String(el.getAttribute?.('checked') || '').toLowerCase();
+                  const role = String(el.getAttribute?.('role') || '').toLowerCase();
+                  const type = String(el.getAttribute?.('type') || '').toLowerCase();
+                  if (ariaChecked === 'true' || checkedAttr === 'true' || checkedAttr === 'checked') return true;
+                  if (selectedTokens.some(token => classes.includes(token))) return true;
+                  if ((role === 'radio' || role === 'checkbox' || type === 'radio' || type === 'checkbox') && el.checked) return true;
+                  return false;
+                };
+
+                const pickValue = el => normalize(
+                  el.value
+                  || el.getAttribute?.('value')
+                  || el.getAttribute?.('aria-label')
+                  || el.getAttribute?.('data-value')
+                  || el.getAttribute?.('title')
+                  || el.innerText
+                  || el.textContent
+                );
+
+                const candidates = Array.from(document.querySelectorAll('input,select,textarea,div,span,label,li,section'))
+                  .filter(el => isInSection(el))
+                  .sort((a, b) => {
+                    const ra = a.getBoundingClientRect();
+                    const rb = b.getBoundingClientRect();
+                    return ra.top - rb.top || ra.left - rb.left;
+                  });
+
+                for (const el of candidates) {
+                  const tag = String(el.tagName || '').toLowerCase();
+                  const type = String(el.getAttribute?.('type') || '').toLowerCase();
+                  const role = String(el.getAttribute?.('role') || '').toLowerCase();
+                  const classes = String(el.className || '').toLowerCase();
+                  const name = String(el.getAttribute?.('name') || '').toLowerCase();
+                  const id = String(el.getAttribute?.('id') || '').toLowerCase();
+                  const explicitControl = tag === 'input' || tag === 'select' || tag === 'textarea' || role === 'radio' || role === 'checkbox';
+                  const hiddenControl = tag === 'input' && type === 'hidden';
+                  const hasSelectionMark = looksSelected(el) || selectedTokens.some(token => classes.includes(token));
+                  const hasBindingHint = /approver|submitter|next approver|next-approver|下一审批人|审批人/.test(`${name} ${id} ${classes}`);
+                  if (!explicitControl && !hiddenControl && !hasSelectionMark && !hasBindingHint) continue;
+                  const value = pickValue(el);
+                  if (value) {
+                    return {
+                      value,
+                      source: hiddenControl ? 'hidden-input' : (explicitControl ? tag : 'dom-node'),
+                    };
+                  }
+                }
+
+                return null;
+                """
             )
-        self.log(f"Manual approval confirmation required. {validation_status}.")
+        except WebDriverException:
+            result = None
+        if not isinstance(result, dict):
+            flow_tracking_name = self.get_flow_tracking_active_approver_name()
+            if flow_tracking_name:
+                return {"value": flow_tracking_name, "source": "flow-tracking-active"}
+            return None
+        value = normalize_text(str(result.get("value") or ""))
+        if not value:
+            flow_tracking_name = self.get_flow_tracking_active_approver_name()
+            if flow_tracking_name:
+                return {"value": flow_tracking_name, "source": "flow-tracking-active"}
+            return None
+        source = normalize_text(str(result.get("source") or ""))
+        return {"value": value, "source": source}
+
+    def get_flow_tracking_active_approver_name(self) -> str | None:
+        try:
+            result = self.driver.execute_script(
+                """
+                const normalize = value => (value || '').replace(/\\s+/g, ' ').trim();
+                const activeTitle = document.querySelector('.van-step__title--active');
+                if (!activeTitle) return null;
+                const approver = activeTitle.querySelector('.approverName');
+                const value = normalize(approver?.innerText || approver?.textContent);
+                return value || null;
+                """
+            )
+        except WebDriverException:
+            return None
+        value = normalize_text(str(result or ""))
+        return value or None
+
+    def confirm_selected_approver_before_submit(self, expected_name: str) -> None:
+        audit = self.assess_selected_approver_audit(expected_name)
+        validation_status = f"自动核验：{audit['verdict']}"
+        hard_verified = audit["binding_source"] in {"flow-tracking-active", "hidden-input"} and bool(audit["binding_value"])
+        if audit["verdict"] == "通过" and hard_verified:
+            self.log(f"Auto approval confirmation skipped because audit passed. {validation_status}. {audit['evidence']}")
+            return
+        recommendation = {
+            "通过": "建议：请人工确认后再提交。",
+            "待人工核对": "建议：请先人工核对页面。",
+            "未通过": "建议：请勿提交，先修正审批人。",
+            "无法自动确认": "建议：请先人工核对页面状态。",
+        }.get(audit["verdict"], "建议：请先人工核对。")
+        evidence_lines = [
+            f"目标：{expected_name}",
+            f"绑定：{audit['binding_value'] or '未识别'}（{audit['binding_source'] or '未记录'}）",
+            f"识别：{audit['actual_name'] or '未识别'}",
+            f"点击：{audit['clicked_name'] or '未记录'} / {audit['clicked_text'] or '未记录'}",
+            f"选中：{audit['selection_state']}；可见：{audit['visible_target']}",
+        ]
+        if audit["validation_mode"]:
+            evidence_lines.append(f"自动点击依据：{audit['validation_mode']}")
+        evidence_lines.append(f"说明：{audit['evidence']}")
+        prompt = "\n".join([validation_status, recommendation, "", *evidence_lines, "", "确认无误后点“确定”，否则点“取消”。"])
+        self.log(f"Manual approval confirmation required. {validation_status}. {audit['evidence']}")
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
@@ -1260,6 +1478,9 @@ class DevtoolsApproveBot:
     def get_selected_approver_name(self) -> str:
         selected_text = self.get_selected_approver_text()
         if not selected_text:
+            flow_tracking_name = self.get_flow_tracking_active_approver_name()
+            if flow_tracking_name:
+                return flow_tracking_name
             return ""
         lines = [normalize_text(line) for line in selected_text.splitlines() if normalize_text(line)]
         return lines[0] if lines else normalize_text(selected_text)
@@ -1380,22 +1601,15 @@ class DevtoolsApproveBot:
 
     def is_back_on_list(self) -> bool:
         try:
-            current_url = self.driver.current_url
-            if "#/travelApplyList" not in current_url:
-                return False
-            try:
-                body_text = normalize_text(self.driver.find_element(By.TAG_NAME, "body").text)
-            except WebDriverException:
-                body_text = ""
-            if "申请单审批" in body_text and ("待审批" in body_text or "已审批" in body_text or "审批中" in body_text):
+            if "#/travelApplyList" in self.driver.current_url and self.find_order_candidates():
                 return True
-            if self.page_has_visible_approval_button():
-                return True
-            if "没有匹配的申请单" in body_text or "暂无" in body_text or "无数据" in body_text:
-                return True
-            return False
         except WebDriverException:
             return False
+        list_markers = [
+            (By.XPATH, "//*[contains(normalize-space(.), '申请单审批')]"),
+            (By.XPATH, "//*[contains(normalize-space(.), '审批中')]"),
+        ]
+        return any(self.find_visible(locator, timeout=1) for locator in list_markers)
 
     def dismiss_noise(self) -> None:
         try:
@@ -1712,6 +1926,7 @@ class DevtoolsApproveBot:
 
     def try_click_approver_checkbox(self, name: str) -> bool:
         if self.click_approver_radio_by_row_position(name):
+            self.last_clicked_approver_name = name
             self.approver_selection_attempted = True
             if self.wait_for_expected_approver_selected(name):
                 self.log(f"Clicked the right-side selector for approver '{name}' and confirmed the actual selection.")
@@ -1725,6 +1940,8 @@ class DevtoolsApproveBot:
             target = self.find_approver_click_target(row, name)
             if not target:
                 continue
+            self.last_clicked_approver_name = name
+            self.last_clicked_approver_text = normalize_text(getattr(row, "text", ""))
             self.safe_click(target)
             self.approver_selection_attempted = True
             if self.wait_for_expected_approver_selected(name):
@@ -1756,6 +1973,8 @@ class DevtoolsApproveBot:
                 if label_id:
                     seen_ids.add(label_id)
                 if self.click_right_side_of_label_row(label):
+                    self.last_clicked_approver_name = name
+                    self.last_clicked_approver_text = normalize_text(getattr(label, "text", ""))
                     if self.label_row_indicator_selected(label):
                         self.last_validated_approver_name = name
                         self.last_validation_mode = "目标姓名同行勾选框状态"
