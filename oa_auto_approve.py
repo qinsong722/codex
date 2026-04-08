@@ -784,6 +784,19 @@ def click_submit_button(driver: WebDriver) -> None:
     raise RuntimeError('未在详情页导航栏中找到“一键提交”按钮，已在 debug 目录保存现场截图。')
 
 
+def wait_for_page_text(driver: WebDriver, text: str, timeout: int = WAIT_LONG) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            page_text = normalize_cell_text(body_text(driver))
+            if text in page_text:
+                return True
+        except WebDriverException:
+            pass
+        time.sleep(1)
+    return False
+
+
 def cdp_click_dialog_submit(driver: WebDriver) -> tuple[bool, str]:
     expression = r"""
 (() => {
@@ -987,13 +1000,20 @@ def cdp_click_dialog_submit(driver: WebDriver) -> tuple[bool, str]:
 
 
 def confirm_submit(driver: WebDriver) -> None:
-    deadline = time.time() + WAIT_LONG
+    deadline = time.time() + WAIT_LONG * 2
+    last_reclick = 0.0
 
     while time.time() < deadline:
         ok, detail = cdp_click_dialog_submit(driver)
         append_debug_text("dialog-submit-attempt", detail)
         if ok:
             return
+        if time.time() - last_reclick >= 5:
+            try:
+                click_submit_button(driver)
+            except Exception:  # noqa: BLE001
+                pass
+            last_reclick = time.time()
         time.sleep(1)
 
     save_debug_snapshot(driver, "missing-dialog-submit")
@@ -1234,6 +1254,7 @@ def process_one(
     open_row_detail_and_switch(driver, frame_path, row, title_index)
     time.sleep(2)
     save_debug_snapshot(driver, "detail-page")
+    wait_for_page_text(driver, "一键提交", timeout=WAIT_LONG)
     click_submit_button(driver)
     time.sleep(1)
     save_debug_snapshot(driver, "after-click-submit")
