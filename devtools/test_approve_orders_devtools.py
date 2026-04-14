@@ -2,6 +2,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 
 from approve_orders_devtools import (
@@ -126,6 +127,21 @@ class ApproverSelectionTests(unittest.TestCase):
 
         self.assertIs(target, checkbox)
 
+    def test_click_target_accepts_right_side_icon_like_control(self):
+        label = FakeElement(text="瑕冨旦", x=20)
+        radio_dot = FakeElement(
+            text="",
+            x=286,
+            width=24,
+            height=24,
+            attributes={"class": "selection-dot"},
+        )
+        row = FakeElement(text="瑕冨旦", children=[label, radio_dot], x=0, width=360)
+
+        target = self.bot.find_approver_click_target(row, "瑕冨旦")
+
+        self.assertIs(target, radio_dot)
+
 
 class ApproverAuditTests(unittest.TestCase):
     def setUp(self):
@@ -167,11 +183,12 @@ class ApproverAuditTests(unittest.TestCase):
 
         self.assertEqual(self.bot.get_selected_approver_name(), "Alice")
 
-    def test_confirm_selected_approver_before_submit_skips_dialog_on_pass(self):
+    def test_confirm_selected_approver_before_submit_shows_dialog_on_pass(self):
+        shown = {"created": False}
         self.bot.assess_selected_approver_audit = lambda expected_name: {
             "verdict": "通过",
             "binding_value": "Alice",
-            "binding_source": "flow-tracking-active",
+            "binding_source": "hidden-input",
             "actual_name": "Alice",
             "clicked_name": "Alice",
             "clicked_text": "Alice",
@@ -182,21 +199,25 @@ class ApproverAuditTests(unittest.TestCase):
         }
         self.bot.log = lambda message: None
 
-        class FailIfCalledTk:
+        class FakeTk:
             def withdraw(self):
-                raise AssertionError("dialog should not be created when audit passes")
+                shown["created"] = True
 
             def attributes(self, *args, **kwargs):
-                raise AssertionError("dialog should not be created when audit passes")
+                shown["created"] = True
 
             def destroy(self):
-                raise AssertionError("dialog should not be created when audit passes")
+                shown["created"] = True
 
-        with patch("approve_orders_devtools.tk.Tk", return_value=FailIfCalledTk()), patch(
+        with patch("approve_orders_devtools.tk.Tk", return_value=FakeTk()), patch(
             "approve_orders_devtools.messagebox.askokcancel",
-            side_effect=AssertionError("dialog should not be shown when audit passes"),
-        ):
-            self.bot.confirm_selected_approver_before_submit("Alice")
+            return_value=False,
+        ) as ask:
+            with self.assertRaises(RuntimeError):
+                self.bot.confirm_selected_approver_before_submit("Alice")
+
+        self.assertTrue(shown["created"])
+        self.assertIn("右侧选择圈", ask.call_args.args[1])
 
     def test_confirm_selected_approver_before_submit_shows_dialog_for_heuristic_pass(self):
         self.bot.assess_selected_approver_audit = lambda expected_name: {
@@ -233,6 +254,7 @@ class ApproverAuditTests(unittest.TestCase):
 
         self.assertTrue(shown["created"])
         self.assertTrue(ask.called)
+        self.assertIn("右侧选择圈", ask.call_args.args[1])
 
 
 class AgreementTests(unittest.TestCase):
@@ -259,6 +281,61 @@ class AgreementTests(unittest.TestCase):
 
         self.assertGreaterEqual(len(calls), 2)
         self.assertTrue(bot.driver.clicked)
+
+
+class IdleRefreshTests(unittest.TestCase):
+    def setUp(self):
+        self.bot = DevtoolsApproveBot.__new__(DevtoolsApproveBot)
+        self.logs = []
+        self.bot.log = self.logs.append
+        self.bot.dismiss_noise = lambda: None
+        self.bot.login_screen_visible = lambda: False
+        self.bot.login = lambda: None
+        self.bot.open_audit_page = lambda: None
+        self.bot.switch_to_pending_approval_tab = lambda: None
+        self.bot.click_status_tab = lambda label: None
+        self.bot.find_action_buttons = lambda labels, exact=True: []
+        self.bot.wait_for_page_ready = lambda settle_seconds=0.0: None
+        self.bot.recover_idle_session_if_needed = lambda: False
+
+    def test_refresh_audit_page_uses_single_direct_navigation(self):
+        calls = []
+
+        class FakeDriver:
+            def refresh(self):
+                raise AssertionError("refresh() should not be used for idle reopening")
+
+            def get(self, url):
+                calls.append(url)
+
+        self.bot.driver = FakeDriver()
+
+        self.bot.refresh_audit_page()
+
+        self.assertEqual(len(calls), 1)
+        self.assertIn("_ts=", calls[0])
+
+    def test_refresh_audit_page_recovers_after_navigation_failure(self):
+        recover_calls = []
+        state = {"calls": 0}
+
+        class FakeDriver:
+            def get(self, url):
+                raise WebDriverException("timed out")
+
+        self.bot.driver = FakeDriver()
+
+        def recover():
+            state["calls"] += 1
+            recover_calls.append("recover")
+            return state["calls"] > 1
+
+        self.bot.recover_idle_session_if_needed = recover
+
+        self.bot.refresh_audit_page()
+
+        self.assertGreaterEqual(len(recover_calls), 1)
+        self.assertTrue(any("Recovered the session after the idle keepalive reopen failed." in entry for entry in self.logs))
 
 
 if __name__ == "__main__":

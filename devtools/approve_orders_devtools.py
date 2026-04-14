@@ -39,7 +39,7 @@ WINDOW_POS_Y = 0
 POLL_INTERVAL_SECONDS = 300
 HEARTBEAT_CHECK_INTERVAL_SECONDS = 3
 IDLE_KEEPALIVE_INTERVAL_SECONDS = 20
-IDLE_REFRESH_INTERVAL_SECONDS = 30
+IDLE_REFRESH_INTERVAL_SECONDS = 180
 LOGIN_PAGE_READY_TIMEOUT_SECONDS = 60
 SEND_CODE_READY_TIMEOUT_SECONDS = 25
 SEND_CODE_CONFIRM_TIMEOUT_SECONDS = 6
@@ -930,12 +930,14 @@ class DevtoolsApproveBot:
             return
         refresh_url = f"{AUDIT_URL}&_ts={int(time.time() * 1000)}"
         try:
-            self.driver.refresh()
+            self.driver.get(refresh_url)
             self.wait_for_page_ready(settle_seconds=0.2)
-        except WebDriverException:
-            pass
-        self.driver.get(refresh_url)
-        self.wait_for_page_ready(settle_seconds=0.2)
+        except WebDriverException as exc:
+            self.log(f"Idle keepalive reopen failed: {exc}")
+            if self.recover_idle_session_if_needed():
+                self.log("Recovered the session after the idle keepalive reopen failed.")
+                return
+            raise
         self.dismiss_noise()
         if self.login_screen_visible():
             self.log("Refresh landed on the login page. Logging in again before reopening the ride-approval page.")
@@ -1299,7 +1301,7 @@ class DevtoolsApproveBot:
             verdict = "无法自动确认"
             evidence = "页面没有读取到足够明确的选中信息。"
 
-        selection_state = "目标行已选中" if target_row_selected else "未检测到目标行选中"
+        selection_state = "目标行右侧选择圈已选中" if target_row_selected else "未检测到目标行右侧选择圈"
         return {
             "verdict": verdict,
             "binding_value": binding_value,
@@ -1439,27 +1441,24 @@ class DevtoolsApproveBot:
     def confirm_selected_approver_before_submit(self, expected_name: str) -> None:
         audit = self.assess_selected_approver_audit(expected_name)
         validation_status = f"自动核验：{audit['verdict']}"
-        hard_verified = audit["binding_source"] in {"flow-tracking-active", "hidden-input"} and bool(audit["binding_value"])
-        if audit["verdict"] == "通过" and hard_verified:
-            self.log(f"Auto approval confirmation skipped because audit passed. {validation_status}. {audit['evidence']}")
-            return
         recommendation = {
-            "通过": "建议：请人工确认后再提交。",
-            "待人工核对": "建议：请先人工核对页面。",
+            "通过": "建议：自动核验已通过，仍请确认右侧选择圈和目标姓名一致后再提交。",
+            "待人工核对": "建议：请先核对右侧选择圈是否已选中目标审批人。",
             "未通过": "建议：请勿提交，先修正审批人。",
-            "无法自动确认": "建议：请先人工核对页面状态。",
-        }.get(audit["verdict"], "建议：请先人工核对。")
+            "无法自动确认": "建议：请先人工核对右侧选择圈和页面状态。",
+        }.get(audit["verdict"], "建议：请先人工核对右侧选择圈。")
         evidence_lines = [
             f"目标：{expected_name}",
-            f"绑定：{audit['binding_value'] or '未识别'}（{audit['binding_source'] or '未记录'}）",
+            f"右侧选择圈：{audit['selection_state']}",
             f"识别：{audit['actual_name'] or '未识别'}",
+            f"绑定：{audit['binding_value'] or '未识别'}（{audit['binding_source'] or '未记录'}）",
             f"点击：{audit['clicked_name'] or '未记录'} / {audit['clicked_text'] or '未记录'}",
-            f"选中：{audit['selection_state']}；可见：{audit['visible_target']}",
+            f"可见：{audit['visible_target']}",
         ]
         if audit["validation_mode"]:
             evidence_lines.append(f"自动点击依据：{audit['validation_mode']}")
         evidence_lines.append(f"说明：{audit['evidence']}")
-        prompt = "\n".join([validation_status, recommendation, "", *evidence_lines, "", "确认无误后点“确定”，否则点“取消”。"])
+        prompt = "\n".join([validation_status, recommendation, "", *evidence_lines, "", "确认右侧选择圈和姓名无误后点“确定”，否则点“取消”。"])
         self.log(f"Manual approval confirmation required. {validation_status}. {audit['evidence']}")
         root = tk.Tk()
         root.withdraw()
@@ -1881,6 +1880,13 @@ class DevtoolsApproveBot:
             descendants = row.find_elements(By.XPATH, ".//*")
         except StaleElementReferenceException:
             return None
+        row_rect = {}
+        try:
+            row_rect = row.rect or {}
+        except (StaleElementReferenceException, AttributeError, TypeError):
+            row_rect = {}
+        row_left = row_rect.get("x", 0)
+        row_right = row_left + row_rect.get("width", 0)
         for element in descendants:
             if not self.is_clickable_candidate(element):
                 continue
@@ -1888,11 +1894,14 @@ class DevtoolsApproveBot:
             if text and text_matches(name, text):
                 continue
             try:
+                rect = element.rect or {}
                 input_type = (element.get_attribute("type") or "").lower()
                 classes = (element.get_attribute("class") or "").lower()
                 role = (element.get_attribute("role") or "").lower()
             except StaleElementReferenceException:
                 return None
+            is_right_side = rect.get("x", 0) >= row_left + max((row_right - row_left) * 0.45, 24)
+            is_iconish = rect.get("width", 0) <= 48 and rect.get("height", 0) <= 48 and not text and is_right_side
             if input_type in {"radio", "checkbox"}:
                 candidates.append(element)
                 continue
@@ -1900,6 +1909,9 @@ class DevtoolsApproveBot:
                 candidates.append(element)
                 continue
             if role in {"radio", "checkbox"}:
+                candidates.append(element)
+                continue
+            if is_iconish:
                 candidates.append(element)
         if candidates:
             return max(candidates, key=lambda el: el.rect.get("x", 0))
@@ -1986,15 +1998,51 @@ class DevtoolsApproveBot:
             clicked = self.driver.execute_script(
                 """
                 const label = arguments[0];
-                label.scrollIntoView({block:'center', inline:'nearest'});
-                const rect = label.getBoundingClientRect();
+                const row = label.closest('.approver-list') || label.closest('label') || label.closest('li') || label.parentElement || label;
+                row.scrollIntoView({block:'center', inline:'nearest'});
+                const rect = row.getBoundingClientRect();
                 const y = Math.round(rect.top + rect.height / 2);
-                const x = Math.round(window.innerWidth - 28);
+                const x = Math.max(Math.round(rect.right - 16), Math.round(rect.left + 1));
+                const candidates = Array.from(row.querySelectorAll('*'))
+                  .filter(el => {
+                    const box = el.getBoundingClientRect();
+                    if (!box.width || !box.height) return false;
+                    if (box.right < rect.left + (rect.width * 0.45)) return false;
+                    const text = String(el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                    const classes = String(el.className || '').toLowerCase();
+                    const role = String(el.getAttribute?.('role') || '').toLowerCase();
+                    const type = String(el.getAttribute?.('type') || '').toLowerCase();
+                    const cursor = String(window.getComputedStyle(el).cursor || '').toLowerCase();
+                    return (
+                      type === 'radio'
+                      || type === 'checkbox'
+                      || role === 'radio'
+                      || role === 'checkbox'
+                      || classes.includes('radio')
+                      || classes.includes('checkbox')
+                      || classes.includes('check')
+                      || classes.includes('select')
+                      || classes.includes('choose')
+                      || classes.includes('icon')
+                      || cursor === 'pointer'
+                      || (box.width <= 48 && box.height <= 48 && !text)
+                    );
+                  })
+                  .sort((a, b) => {
+                    const ra = a.getBoundingClientRect();
+                    const rb = b.getBoundingClientRect();
+                    return rb.right - ra.right || ra.width * ra.height - rb.width * rb.height;
+                  });
+                for (const candidate of candidates) {
+                    try {
+                        candidate.click();
+                        return true;
+                    } catch (e) {}
+                }
                 let el = document.elementFromPoint(x, y);
                 if (!el) return false;
-
-                const candidates = [el, el.closest('label'), el.closest('[role="radio"]'), el.closest('[role="checkbox"]'), el.closest('div'), el.closest('span')].filter(Boolean);
-                for (const candidate of candidates) {
+                const fallback = [el, el.closest('label'), el.closest('[role="radio"]'), el.closest('[role="checkbox"]'), el.closest('div'), el.closest('span')].filter(Boolean);
+                for (const candidate of fallback) {
                     try {
                         candidate.click();
                         return true;
@@ -2039,9 +2087,24 @@ class DevtoolsApproveBot:
                     continue
                 if label_id:
                     seen_ids.add(label_id)
+                row = self.get_approver_row_container(label)
+                if row and self.row_is_selected(row):
+                    return True
                 if self.label_row_indicator_selected(label):
                     return True
         return False
+
+    def get_approver_row_container(self, label):
+        try:
+            return self.driver.execute_script(
+                """
+                const label = arguments[0];
+                return label.closest('.approver-list') || label.closest('label') || label.closest('li') || label.parentElement || label;
+                """,
+                label,
+            )
+        except WebDriverException:
+            return None
 
     def label_row_indicator_selected(self, label) -> bool:
         try:
@@ -2083,10 +2146,11 @@ class DevtoolsApproveBot:
                   return rect.width <= 48 && rect.height <= 48;
                 };
 
-                label.scrollIntoView({block:'center', inline:'nearest'});
-                const rect = label.getBoundingClientRect();
+                const row = label.closest('.approver-list') || label.closest('label') || label.closest('li') || label.parentElement || label;
+                row.scrollIntoView({block:'center', inline:'nearest'});
+                const rect = row.getBoundingClientRect();
                 const y = Math.round(rect.top + rect.height / 2);
-                const x = Math.round(window.innerWidth - 28);
+                const x = Math.max(Math.round(rect.right - 16), Math.round(rect.left + 1));
                 let hit = document.elementFromPoint(x, y);
                 if (!hit) return false;
                 const candidates = [
